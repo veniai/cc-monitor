@@ -1,0 +1,6 @@
+config.conf
+*.pyc
+__pycache__/
+/tmp/
+*.log
+*.pid
