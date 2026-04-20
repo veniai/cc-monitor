@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Feishu/Lark channel plugin
+# Feishu/Lark channel plugin (same behavior as wechat: full_msg + session tag + retry)
 
 channel_send() {
   local full_msg="$1"
@@ -9,9 +9,16 @@ channel_send() {
   webhook=$(config_get "channel:feishu:webhook" "")
   [[ -z "$webhook" ]] && return 1
 
+  local msg_with_session="${full_msg}\n\n📌 ${TMUX_SESSION:-unknown}"
   local payload
-  payload=$(jq -n --arg text "$short_msg" '{msg_type:"text",content:{text:$text}}')
-  curl -sf -X POST "$webhook" \
-    -H 'Content-Type: application/json' \
-    -d "$payload" | jq -e '.code == 0' >/dev/null 2>&1
+  payload=$(jq -n --arg text "$msg_with_session" '{msg_type:"text",content:{text:$text}}')
+
+  local _i
+  for _i in 1 2 3; do
+    curl -sf -X POST "$webhook" \
+      -H 'Content-Type: application/json' \
+      -d "$payload" | jq -e '.code == 0' >/dev/null 2>&1 && return 0
+    sleep 2
+  done
+  return 1
 }

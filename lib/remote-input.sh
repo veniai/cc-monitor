@@ -169,7 +169,8 @@ remote_input_loop() {
       # shellcheck source=/dev/null
       source "$plugin"
       local messages
-      messages=$(input_poll) || { sleep "$poll_interval"; continue; }
+      # Timeout input_poll to prevent blocking (30s max)
+      messages=$(timeout 30 input_poll 2>/dev/null) || { sleep "$poll_interval"; continue; }
 
       local count
       count=$(echo "$messages" | jq 'length' 2>/dev/null) || count=0

@@ -123,13 +123,26 @@ handle_permission_request() {
   detail=$(get_tool_detail "$HOOK_TOOL_NAME" "$HOOK_TOOL_INPUT")
   printf -v msg '**[Monitor]** %s 请求执行 %s' "$TMUX_SESSION" "$HOOK_TOOL_NAME"
   [[ -n "$detail" ]] && printf -v msg '%s\n%s' "$msg" "$detail"
-  printf -v msg '%s\n%s' "$msg" "5分钟内未处理将自动批准"
-  short="${TMUX_SESSION} ⚠ 权限: ${HOOK_TOOL_NAME}"
-  [[ -n "$detail" ]] && short="${short} $(truncate_str "$detail" 50)"
-  notify_user "$msg" "$short"
 
-  sleep 300
-  printf '%s\n' '{"decision":"approve"}'
+  local auto_approve
+  auto_approve=$(config_get "monitor:auto_approve_permissions" "true")
+
+  if [[ "$auto_approve" == "true" ]]; then
+    local timeout_secs
+    timeout_secs=$(config_get "monitor:auto_approve_timeout" "300")
+    printf -v msg '%s\n%s' "$msg" "${timeout_secs}秒内未处理将自动批准"
+    short="${TMUX_SESSION} ⚠ 权限: ${HOOK_TOOL_NAME}"
+    [[ -n "$detail" ]] && short="${short} $(truncate_str "$detail" 50)"
+    notify_user "$msg" "$short"
+    sleep "$timeout_secs"
+    printf '%s\n' '{"decision":"approve"}'
+  else
+    printf -v msg '%s\n%s' "$msg" "请手动处理此权限请求"
+    short="${TMUX_SESSION} ⚠ 权限: ${HOOK_TOOL_NAME}"
+    [[ -n "$detail" ]] && short="${short} $(truncate_str "$detail" 50)"
+    notify_user "$msg" "$short"
+    printf '%s\n' '{"decision":"deny"}'
+  fi
 }
 
 handle_session_end() {

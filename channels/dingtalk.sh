@@ -10,11 +10,16 @@ channel_send() {
   secret=$(config_get "channel:dingtalk:secret" "")
   [[ -z "$webhook" ]] && return 1
 
+  # DingTalk uses short_msg (designed for smartwatch/glance display)
   # Ensure keyword (~) is present for DingTalk bot filter
   [[ "$short_msg" != *'~'* ]] && short_msg="~ ${short_msg}"
 
   local url="$webhook"
   if [[ -n "$secret" ]]; then
+    if ! command -v python3 >/dev/null 2>&1; then
+      echo "[cc-monitor] DingTalk signing requires python3" >&2
+      return 1
+    fi
     local timestamp sign
     timestamp=$(printf '%.0f' "$(date +%s%3N)")
     sign=$(printf '%s\n%s' "$timestamp" "$secret" \
