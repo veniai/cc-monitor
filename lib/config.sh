@@ -62,6 +62,7 @@ _config_apply_env() {
     local k env_name
     for k in "${!_CFG[@]}"; do
         env_name="CC_MONITOR_${k}"
+        env_name="${env_name//-/_}"
         env_name="${env_name//:/_}"
         env_name="${env_name^^}"
         if [[ -n "${!env_name+x}" ]]; then

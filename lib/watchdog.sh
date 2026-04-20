@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# Watchdog: detect stuck Claude Code sessions
+
+[[ -n "${_WATCHDOG_LOADED:-}" ]] && return 0
+_WATCHDOG_LOADED=1
+
+handle_watchdog() {
+  local session pane_id pane_text spinner_line token_raw token_norm
+  local prev_token first_seen now count wait_raw wait_secs
+  local wait_indicator
+
+  while read -r session pane_id; do
+    [[ -z "$session" ]] && continue
+
+    local marker target
+    marker=$(marker_path "$session")
+    target=$(config_get "channel:wechat:target" "")
+    marker_ensure "$session" "$target"
+
+    # Only capture visible screen — scrollback may contain stale spinners
+    pane_text=$(capture_pane "$pane_id")
+
+    # Match CC spinner: exact 7 icons [·✢✳✶✻✽*] + verb + … + (time
+    spinner_line=$(echo "$pane_text" | grep -P '^[·✢✳✶✻✽*].{0,80}…\s*\(\d+[hms]' | tail -1)
+    token_raw=$(echo "$spinner_line" | grep -oP '[\d.]+[kK]?(?=\s*tokens?)' | tail -1)
+
+    now=$(date +%s)
+
+    if [[ -z "$token_raw" ]]; then
+      # No tokens — check spinner wait time
+      wait_raw=$(echo "$spinner_line" | grep -oP '\(\K\d+(h\s+\d+)?m\s+\d+s' | tail -1)
+      if [[ -n "$wait_raw" ]]; then
+        wait_secs=$(echo "$wait_raw" | awk '{
+          h=0; m=0; s=0;
+          for(i=1;i<=NF;i++){
+            if($i~/h/) h=$i+0; else if($i~/m/) m=$i+0; else if($i~/s/) s=$i+0;
+          }
+          print h*3600+m*60+s
+        }')
+        if (( wait_secs >= 600 )); then
+          count=$(marker_read "$session" "auto_recovery_count") || count=0
+          if (( count >= 2 )); then
+            if [[ "${DRY_RUN:-false}" == "true" ]]; then
+              echo "[DRY-RUN] $session 等待无响应 ${wait_raw}，已恢复2次未生效"
+            else
+              notify_user \
+                "**[Monitor]** $session 等待无响应 (${wait_raw})，已自动恢复2次，请手动检查" \
+                "$session ⚠ 等待超时"
+              marker_update "$session" ".token_first_seen_at = $now"
+            fi
+          elif [[ "${DRY_RUN:-false}" == "true" ]]; then
+            echo "[DRY-RUN] $session 等待无响应 ${wait_raw}，应执行恢复 (第$((count + 1))次)"
+          else
+            recover_session "$pane_id"
+            marker_update "$session" ".auto_recovery_count = ($count + 1) | .token_first_seen_at = $now"
+          fi
+        fi
+      fi
+      continue
+    fi
+
+    # Normalize token to integer
+    if [[ "$token_raw" == *[kK] ]]; then
+      token_norm=$(echo "${token_raw%[kK]}" | awk '{printf "%.0f", $1 * 1000}')
+    else
+      token_norm=$(printf '%.0f' "$token_raw")
+    fi
+
+    prev_token=$(marker_read "$session" "last_tokens")
+
+    # Token changed → reset tracking
+    if [[ -z "$prev_token" || "$prev_token" != "$token_norm" ]]; then
+      marker_update "$session" ".last_tokens = $token_norm | .token_first_seen_at = $now | .auto_recovery_count = 0"
+      continue
+    fi
+
+    # Token unchanged → check timeout (15 min)
+    first_seen=$(marker_read "$session" "token_first_seen_at") || first_seen=0
+    (( now - first_seen < 900 )) && continue
+
+    # Verify CC is still processing (spinner visible)
+    wait_indicator=$(echo "$spinner_line" | grep -oP '\(\K\d+(h\s+\d+)?m\s+\d+s' | tail -1)
+    if [[ -z "$wait_indicator" ]]; then
+      marker_update "$session" ".token_first_seen_at = $now"
+      continue
+    fi
+
+    # Stuck confirmed: check recovery budget
+    count=$(marker_read "$session" "auto_recovery_count") || count=0
+    if (( count >= 2 )); then
+      if [[ "${DRY_RUN:-false}" == "true" ]]; then
+        echo "[DRY-RUN] $session 连续2次恢复未生效，应只告警"
+      else
+        notify_user \
+          "**[Monitor]** $session 连续2次恢复未生效，请手动检查" \
+          "$session ⚠ 自动恢复失败"
+        marker_update "$session" ".token_first_seen_at = $now"
+      fi
+      continue
+    fi
+
+    if [[ "${DRY_RUN:-false}" == "true" ]]; then
+      echo "[DRY-RUN] $session 应执行恢复: Escape → 继续 → Enter (第$((count + 1))次)"
+      continue
+    fi
+
+    recover_session "$pane_id"
+    marker_update "$session" ".auto_recovery_count = ($count + 1) | .token_first_seen_at = $now"
+  done < <(list_claude_panes)
+}
