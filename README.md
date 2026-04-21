@@ -1,23 +1,23 @@
 # cc-monitor
 
-Remote monitoring and input tool for [Claude Code](https://claude.ai/code). Get notified when tasks complete, auto-recover stuck sessions, and send commands from your phone via WeChat, DingTalk, or Feishu.
+Remote monitoring tool for [Claude Code](https://claude.ai/code). Get notified when tasks complete, auto-recover stuck sessions — via DingTalk, Feishu, or WeChat.
 
 ```
   Your Computer (tmux)                    Your Phone
 ┌─────────────────────┐              ┌──────────────────┐
 │  ✶ Refactoring…     │─── notify ──▶│ "2号 任务完成:"   │
 │  (Claude working)    │              │ "重构登录模块..."  │
-│                      │◀── command ──│ "@1号 继续"       │
 └─────────────────────┘              └──────────────────┘
 ```
 
 ## Features
 
-- **Task notifications** — Get WeChat/DingTalk/Feishu messages when Claude Code finishes, hits errors, or requests permissions
+- **Task notifications** — Get DingTalk/Feishu/WeChat messages when Claude Code finishes, hits errors, or requests permissions
 - **Stuck detection** — Watchdog monitors spinner state and auto-recovers frozen sessions
-- **Remote input** — Send commands like `@session 继续` or `@session 停止` from your IM client
 - **Permission handling** — Auto-approve safe tools, notify + delay-approve risky ones
 - **Plugin channels** — Add new notification channels by dropping a `.sh` file
+
+> **Remote input (sending commands back to Claude from IM)** is handled by [OpenClaw](https://github.com/veniai/openclaw) or [Claude-to-IM](https://github.com/veniai/Claude-to-IM-skill).
 
 ## Quick Start
 
@@ -50,7 +50,7 @@ cd cc-monitor
 - **grep -P** — Perl regex support (GNU grep)
 - **bash 4+**
 - **python3** (optional, for DingTalk signing)
-- **openclaw** CLI (optional, for WeChat channel)
+- **openclaw** CLI (optional, only needed for WeChat channel; DingTalk/Feishu work without it)
 
 Platform: **Linux** or **WSL** (Windows Subsystem for Linux). macOS has known compatibility issues (see below).
 
