@@ -4,6 +4,24 @@
 [[ -n "${_HOOKS_LOADED:-}" ]] && return 0
 _HOOKS_LOADED=1
 
+# Debug dump: log hook payload for troubleshooting
+dump_debug() {
+  local debug_dir="${MARKER_DIR:-/tmp/cc-monitor}/debug"
+  mkdir -p "$debug_dir"
+  local event="${HOOK_EVENT:-unknown}"
+  printf '%s' "$HOOK_INPUT" | jq -c '{
+    hook_event_name,
+    reason,
+    error,
+    stop_reason,
+    tool_name,
+    tool_input_keys: (.tool_input // {} | keys?),
+    last_msg_len: (.last_assistant_message // "" | length)
+  }' >"$debug_dir/${event}-$(date +%s).json" 2>/dev/null || true
+  # Keep only last 20 debug files
+  ls -t "$debug_dir"/*.json 2>/dev/null | tail -n +21 | xargs rm -f 2>/dev/null || true
+}
+
 is_permanent_error() {
   printf '%s' "$1" | grep -qiE '\bauthentication\b|\bunauthorized\b|\bforbidden\b|\binvalid.api.key\b|\bquota.exceeded\b|\bbilling\b|\binvalid_request\b|\bpayment\b'
 }
@@ -162,10 +180,14 @@ handle_hook_main() {
   tool_input=$(printf '%s' "$input" | jq -c '.tool_input // empty')
 
   # Export for sub-functions
+  HOOK_INPUT="$input"
+  HOOK_EVENT="$event"
   HOOK_LAST_MSG="$last_msg"
   HOOK_REASON="$reason"
   HOOK_TOOL_NAME="$tool_name"
   HOOK_TOOL_INPUT="$tool_input"
+
+  dump_debug
 
   TMUX_SESSION=$(find_tmux_session) || exit 0
 
@@ -179,4 +201,22 @@ handle_hook_main() {
     Stop)              handle_stop ;;
     SessionEnd)        handle_session_end ;;
   esac
+}
+
+# Codex CLI stop handler
+handle_codex_stop() {
+  local input msg session pane_cmd
+  input=$(cat)
+  session=$(find_tmux_session) || { printf '%s\n' '{}'; return 0; }
+  pane_cmd=$(tmux list-panes -t "$TMUX_PANE" -F '#{pane_current_command}' 2>/dev/null)
+  # Only handle if NOT a Claude session (Claude stops go through handle_hook_main)
+  [[ "$pane_cmd" != "claude" ]] || { printf '%s\n' '{}'; return 0; }
+
+  msg=$(printf '%s' "$input" | jq -r '.last_assistant_message // empty')
+  TARGET=$(config_get "channel:wechat:target" "")
+  [[ -z "$msg" ]] && msg="(Codex 任务完成，无输出摘要)"
+  notify_user \
+    "**[Codex Monitor]** ${session} 任务完成:\n\n$(truncate_str "$msg" 1500)" \
+    "${session} ✓ Codex完成"
+  printf '%s\n' '{}'
 }
