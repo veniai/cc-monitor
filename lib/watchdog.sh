@@ -26,85 +26,99 @@ handle_watchdog() {
 
     now=$(date +%s)
 
-    if [[ -z "$token_raw" ]]; then
-      # No tokens — check spinner wait time
-      wait_raw=$(echo "$spinner_line" | grep -oP '\(\K\d+(h\s+\d+)?m\s+\d+s' | tail -1)
-      if [[ -n "$wait_raw" ]]; then
-        wait_secs=$(echo "$wait_raw" | awk '{
-          h=0; m=0; s=0;
-          for(i=1;i<=NF;i++){
-            if($i~/h/) h=$i+0; else if($i~/m/) m=$i+0; else if($i~/s/) s=$i+0;
-          }
-          print h*3600+m*60+s
-        }')
-        if (( wait_secs >= 600 )); then
-          count=$(marker_read "$session" "auto_recovery_count") || count=0
-          if (( count >= 2 )); then
-            if [[ "${DRY_RUN:-false}" == "true" ]]; then
-              echo "[DRY-RUN] $session 等待无响应 ${wait_raw}，已恢复2次未生效"
-            else
-              notify_user \
-                "**[Monitor]** $session 等待无响应 (${wait_raw})，已自动恢复2次，请手动检查" \
-                "$session ⚠ 等待超时"
-              marker_update "$session" ".token_first_seen_at = $now"
-            fi
-          elif [[ "${DRY_RUN:-false}" == "true" ]]; then
-            echo "[DRY-RUN] $session 等待无响应 ${wait_raw}，应执行恢复 (第$((count + 1))次)"
-          else
-            recover_session "$pane_id"
-            marker_update "$session" ".auto_recovery_count = ($count + 1) | .token_first_seen_at = $now"
+    if [[ -n "$spinner_line" ]]; then
+      # --- Spinner detected: precise token/wait detection ---
+      if [[ -n "$token_raw" ]]; then
+        # Token-based detection
+        if [[ "$token_raw" == *[kK] ]]; then
+          token_norm=$(echo "${token_raw%[kK]}" | awk '{printf "%.0f", $1 * 1000}')
+        else
+          token_norm=$(printf '%.0f' "$token_raw")
+        fi
+
+        prev_token=$(marker_read "$session" "last_tokens")
+
+        if [[ -z "$prev_token" || "$prev_token" != "$token_norm" ]]; then
+          marker_update "$session" ".last_tokens = $token_norm | .token_first_seen_at = $now | .auto_recovery_count = 0 | .screen_md5_stable_count = 0"
+          continue
+        fi
+
+        first_seen=$(marker_read "$session" "token_first_seen_at") || first_seen=0
+        (( now - first_seen < 900 )) && continue
+
+        wait_indicator=$(echo "$spinner_line" | grep -oP '\(\K\d+(h\s+\d+)?m\s+\d+s' | tail -1)
+        if [[ -z "$wait_indicator" ]]; then
+          marker_update "$session" ".token_first_seen_at = $now"
+          continue
+        fi
+
+        _watchdog_recover "$session" "$pane_id" "spinner token 15min unchanged"
+      else
+        # No tokens — check spinner wait time (10 min)
+        wait_raw=$(echo "$spinner_line" | grep -oP '\(\K\d+(h\s+\d+)?m\s+\d+s' | tail -1)
+        if [[ -n "$wait_raw" ]]; then
+          wait_secs=$(echo "$wait_raw" | awk '{
+            h=0; m=0; s=0;
+            for(i=1;i<=NF;i++){
+              if($i~/h/) h=$i+0; else if($i~/m/) m=$i+0; else if($i~/s/) s=$i+0;
+            }
+            print h*3600+m*60+s
+          }')
+          if (( wait_secs >= 600 )); then
+            _watchdog_recover "$session" "$pane_id" "spinner wait ${wait_raw}"
           fi
         fi
       fi
-      continue
-    fi
-
-    # Normalize token to integer
-    if [[ "$token_raw" == *[kK] ]]; then
-      token_norm=$(echo "${token_raw%[kK]}" | awk '{printf "%.0f", $1 * 1000}')
     else
-      token_norm=$(printf '%.0f' "$token_raw")
-    fi
+      # --- No spinner: MD5 fallback detection ---
+      # Skip if task completed normally (Stop hook set stop_seen=true)
+      local stop_seen
+      stop_seen=$(marker_read "$session" "stop_seen") || stop_seen="false"
+      [[ "$stop_seen" == "true" ]] && continue
 
-    prev_token=$(marker_read "$session" "last_tokens")
+      local screen_md5 prev_md5 stable_count
+      screen_md5=$(printf '%s' "$pane_text" | md5sum | awk '{print $1}')
+      prev_md5=$(marker_read "$session" "screen_md5") || prev_md5=""
 
-    # Token changed → reset tracking
-    if [[ -z "$prev_token" || "$prev_token" != "$token_norm" ]]; then
-      marker_update "$session" ".last_tokens = $token_norm | .token_first_seen_at = $now | .auto_recovery_count = 0"
-      continue
-    fi
-
-    # Token unchanged → check timeout (15 min)
-    first_seen=$(marker_read "$session" "token_first_seen_at") || first_seen=0
-    (( now - first_seen < 900 )) && continue
-
-    # Verify CC is still processing (spinner visible)
-    wait_indicator=$(echo "$spinner_line" | grep -oP '\(\K\d+(h\s+\d+)?m\s+\d+s' | tail -1)
-    if [[ -z "$wait_indicator" ]]; then
-      marker_update "$session" ".token_first_seen_at = $now"
-      continue
-    fi
-
-    # Stuck confirmed: check recovery budget
-    count=$(marker_read "$session" "auto_recovery_count") || count=0
-    if (( count >= 2 )); then
-      if [[ "${DRY_RUN:-false}" == "true" ]]; then
-        echo "[DRY-RUN] $session 连续2次恢复未生效，应只告警"
+      if [[ "$screen_md5" == "$prev_md5" ]]; then
+        # Screen unchanged
+        stable_count=$(marker_read "$session" "screen_md5_stable_count") || stable_count=0
+        (( stable_count++ ))
+        # 3 consecutive unchanged checks (~15 min at 5min interval)
+        if (( stable_count >= 3 )); then
+          _watchdog_recover "$session" "$pane_id" "screen frozen (MD5 unchanged x${stable_count})"
+          marker_update "$session" ".screen_md5_stable_count = 0"
+        else
+          marker_update "$session" ".screen_md5 = \"$screen_md5\" | .screen_md5_stable_count = $stable_count"
+        fi
       else
-        notify_user \
-          "**[Monitor]** $session 连续2次恢复未生效，请手动检查" \
-          "$session ⚠ 自动恢复失败"
-        marker_update "$session" ".token_first_seen_at = $now"
+        # Screen changed — reset
+        marker_update "$session" ".screen_md5 = \"$screen_md5\" | .screen_md5_stable_count = 0"
       fi
-      continue
     fi
+  done < <(list_claude_panes)
+}
 
+# Shared recovery logic: notify or auto-recover
+_watchdog_recover() {
+  local session="$1" pane_id="$2" reason="$3"
+  local count now
+  now=$(date +%s)
+  count=$(marker_read "$session" "auto_recovery_count") || count=0
+
+  if (( count >= 2 )); then
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
-      echo "[DRY-RUN] $session 应执行恢复: Escape → 继续 → Enter (第$((count + 1))次)"
-      continue
+      echo "[DRY-RUN] $session 已恢复2次未生效 ($reason)"
+    else
+      notify_user \
+        "**[Monitor]** $session 连续2次恢复未生效 ($reason)，请手动检查" \
+        "$session ⚠ 自动恢复失败"
+      marker_update "$session" ".token_first_seen_at = $now"
     fi
-
+  elif [[ "${DRY_RUN:-false}" == "true" ]]; then
+    echo "[DRY-RUN] $session 应执行恢复 ($reason, 第$((count + 1))次)"
+  else
     recover_session "$pane_id"
     marker_update "$session" ".auto_recovery_count = ($count + 1) | .token_first_seen_at = $now"
-  done < <(list_claude_panes)
+  fi
 }
