@@ -188,9 +188,9 @@ handle_hook_main() {
   HOOK_TOOL_INPUT="$tool_input"
 
   dump_debug
-  [[ "${DEBUG_MODE:-false}" == "true" ]] && echo "[cc-monitor] mode=${CC_MODE:-unknown} session=$TMUX_SESSION event=$event" >&2
 
   TMUX_SESSION=$(find_tmux_session) || exit 0
+  [[ "${DEBUG_MODE:-false}" == "true" ]] && echo "[cc-monitor] mode=${CC_MODE:-unknown} session=$TMUX_SESSION event=$event" >&2
 
   marker_ensure "$TMUX_SESSION"
 

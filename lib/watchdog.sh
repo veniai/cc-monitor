@@ -14,7 +14,6 @@ handle_watchdog() {
 
     local marker
     marker=$(marker_path "$session")
-    marker_ensure "$session"
 
     # Only capture visible screen — scrollback may contain stale spinners
     pane_text=$(capture_pane "$pane_id")
@@ -26,6 +25,8 @@ handle_watchdog() {
     now=$(date +%s)
 
     if [[ -n "$spinner_line" ]]; then
+      # Spinner detected: task is running, ensure marker
+      marker_ensure "$session"
       # --- Spinner detected: precise token/wait detection ---
       if [[ -n "$token_raw" ]]; then
         # Token-based detection

@@ -77,7 +77,7 @@ detect_platform() {
 }
 
 check_dependencies() {
-  local required=(bash tmux jq grep curl)
+  local required=(bash tmux jq grep curl python3)
   local missing=()
   for cmd in "${required[@]}"; do
     if ! command -v "$cmd" &>/dev/null; then
