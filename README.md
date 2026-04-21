@@ -1,194 +1,206 @@
 # cc-monitor
 
-Remote monitoring tool for [Claude Code](https://claude.ai/code). Get notified when tasks complete, auto-recover stuck sessions — via DingTalk, Feishu, or WeChat.
+[English](README.en.md) | 中文
+
+Claude Code 远程监控工具。任务完成时收到通知，自动恢复卡住的会话。
 
 ```
-  Your Computer (tmux)                    Your Phone
-┌─────────────────────┐              ┌──────────────────┐
-│  ✶ Refactoring…     │─── notify ──▶│ "2号 任务完成:"   │
-│  (Claude working)    │              │ "重构登录模块..."  │
-└─────────────────────┘              └──────────────────┘
+  你的电脑 (tmux)                       你的手机/手表
+┌─────────────────────┐             ┌──────────────┐
+│  ✶ 重构登录模块…     │── 通知 ───→│  📱 微信/飞书  │ ← 查看详情
+│  (Claude 在跑)       │             │  ⌚ 钉钉      │ ← 手腕震动提醒
+│                      │             └──────────────┘
+│                      │← 远程输入 ──  📱 发消息控制 Claude
+└─────────────────────┘
 ```
 
-## Features
+## 两种安装模式
 
-- **Task notifications** — Get DingTalk/Feishu/WeChat messages when Claude Code finishes, hits errors, or requests permissions
-- **Stuck detection** — Watchdog monitors spinner state and auto-recovers frozen sessions
-- **Permission handling** — Auto-approve safe tools, notify + delay-approve risky ones
-- **Plugin channels** — Add new notification channels by dropping a `.sh` file
+### 模式一：直连（零依赖）
 
-> **Remote input (sending commands back to Claude from IM)** is handled by [OpenClaw](https://github.com/veniai/openclaw) or [Claude-to-IM](https://github.com/veniai/Claude-to-IM-skill).
+不装任何外部服务，填 webhook URL 就能用。
 
-## Quick Start
+| 通道 | 方式 | 用途 |
+|------|------|------|
+| 钉钉 | webhook 直连 | 强通知（手表/手环震动） |
+| 飞书 | webhook 直连 | IM 通知 |
 
-### Option A: AI-driven install
+只有通知，没有远程输入。
 
-Tell your Claude Code:
+### 模式二：装龙虾（完整功能）
+
+通过 [OpenClaw（龙虾）](https://github.com/veniai/openclaw) 连接微信和飞书，支持远程输入。
+
+| 通道 | 方式 | 用途 |
+|------|------|------|
+| 钉钉 | webhook 直连 | 强通知（手表/手环震动） |
+| 微信 | OpenClaw | IM 通知 + 远程输入 |
+| 飞书 | OpenClaw | IM 通知 + 远程输入 |
+
+**两种模式互斥，只选一种。**
+
+> **为什么钉钉始终走 webhook？** 钉钉是专用的强通知通道，发短消息到手表/手环，手腕一震就知道任务完成了。微信/飞书是日常聊天工具，拿来震手腕会太吵。
+
+## 快速开始
+
+### AI 驱动安装（推荐）
+
+告诉你的 Claude Code：
 
 ```
 请按照 https://github.com/veniai/cc-monitor/blob/main/install.md 安装 cc-monitor
 ```
 
-### Option B: Manual install
+### 手动安装
 
 ```bash
 git clone https://github.com/veniai/cc-monitor.git
 cd cc-monitor
 
-# Interactive setup
+# 交互式安装（会引导你选模式）
 ./install.sh --interactive
 
-# Or non-interactive
-./install.sh --channel wechat --enable-watchdog
+# 或非交互式
+./install.sh --mode direct --enable-watchdog      # 直连模式
+./install.sh --mode openclaw --enable-watchdog     # 龙虾模式
 ```
 
-## Prerequisites
+## 前置依赖
 
-- **Claude Code** (the CLI tool)
-- **tmux** — terminal multiplexer
-- **jq** — JSON processor
-- **grep -P** — Perl regex support (GNU grep)
+- **Claude Code**（CLI 工具）
+- **tmux** — 终端复用器
+- **jq** — JSON 处理器
+- **grep -P** — Perl 正则（GNU grep）
 - **bash 4+**
-- **python3** (optional, for DingTalk signing)
-- **openclaw** CLI (optional, only needed for WeChat channel; DingTalk/Feishu work without it)
+- **python3**（可选，钉钉加签需要）
+- **openclaw** CLI（仅龙虾模式需要）
 
-Platform: **Linux** or **WSL** (Windows Subsystem for Linux). macOS has known compatibility issues (see below).
+平台：**Linux** 或 **WSL**。
 
-## Configuration
+## 配置
 
-Copy `config.example.conf` to `~/.config/cc-monitor/config.conf`:
+复制 `config.example.conf` 到 `~/.config/cc-monitor/config.conf`。
+
+### 直连模式配置
 
 ```ini
 [monitor]
-watchdog_interval=300
-auto_recovery_max=2
-
-[channel:wechat]
-enabled=true
-account=your-openclaw-account-id
-target=your-target@im.wechat
+mode=direct
 
 [channel:dingtalk]
-enabled=false
+enabled=true
 webhook=https://oapi.dingtalk.com/robot/send?access_token=xxx
 secret=
 
 [channel:feishu]
-enabled=false
+enabled=true
 webhook=https://open.feishu.cn/open-apis/bot/v2/hook/xxx
-
-[input:wechat]
-enabled=false
-poll_interval=30
-allowed_commands=继续,continue,停止,stop,状态,status
-allowed_senders=
-rate_limit_per_minute=10
 ```
 
-Environment variable override: `CC_MONITOR_<SECTION>_<KEY>` (e.g., `CC_MONITOR_CHANNEL_DINGTALK_WEBHOOK`).
+### 龙虾模式配置
 
-## Channel Setup
+```ini
+[monitor]
+mode=openclaw
 
-### WeChat (via OpenClaw)
+[channel:dingtalk]
+enabled=true
+webhook=https://oapi.dingtalk.com/robot/send?access_token=xxx
 
-1. Install OpenClaw: `pip install openclaw`
-2. Run `openclaw login`
-3. Get `account`: `openclaw account list`
-4. Get `target`: `openclaw contact list` (format: `id@im.wechat`)
+[channel:wechat]
+enabled=true
+openclaw_channel=openclaw-weixin
+openclaw_account=你的account
+openclaw_target=你的target@im.wechat
 
-### DingTalk
+[openclaw]
+agent_mode=sub
+agent_name=cc-monitor
+```
 
-1. DingTalk Group → Settings → Smart Group Assistant → Add Robot → Custom
-2. Copy the webhook URL
-3. Optionally enable signing and copy the secret
+环境变量覆盖：`CC_MONITOR_<SECTION>_<KEY>`（如 `CC_MONITOR_CHANNEL_DINGTALK_WEBHOOK`）。
 
-### Feishu / Lark
+## 渠道设置
 
-1. Feishu Group → Settings → Bots → Add Bot → Custom Bot
-2. Copy the webhook URL
-3. Optionally configure signing key
+### 钉钉（强通知，两个模式通用）
 
-## Usage
+1. 钉钉群 → 设置 → 智能群助手 → 添加机器人 → 自定义
+2. 复制 webhook URL
+3. 可选：开启加签，复制 secret
 
-cc-monitor runs in three modes:
+### 飞书 — 直连模式
 
-### Hook mode (automatic)
+1. 飞书群 → 设置 → 群机器人 → 添加机器人 → 自定义机器人
+2. 复制 webhook URL
 
-Registered as Claude Code hooks — fires on task events:
+### 微信 / 飞书 — 龙虾模式
+
+1. 安装龙虾：`npm install -g openclaw`
+2. 运行 `openclaw channels login --channel weixin`（或 feishu）
+3. install.sh 会自动读取龙虾配置
+
+## 使用方式
+
+### Hook 模式（自动触发）
+
+安装后自动注册为 Claude Code hooks，任务完成/出错/请求权限时自动通知。
+
+### Watchdog 模式（定时检查）
 
 ```bash
-# Registered automatically by install.sh
-# Triggers: Stop, StopFailure, PermissionRequest, SessionEnd
+./cc-monitor.sh watchdog            # 检测卡住的会话
+./cc-monitor.sh watchdog --dry-run  # 仅预览，不执行恢复
 ```
 
-### Watchdog mode (cron)
-
-Checks for stuck sessions every 5 minutes:
-
-```bash
-# Added to crontab by install.sh
-# Or run manually:
-./cc-monitor.sh watchdog
-./cc-monitor.sh watchdog --dry-run  # preview only
-```
-
-### Remote Input mode (daemon)
-
-Polls IM for commands:
-
-```bash
-./cc-monitor.sh remote-input          # start daemon
-./cc-monitor.sh remote-input --stop   # stop daemon
-```
-
-Send from WeChat:
-- `@session名 继续` — resume a stuck session
-- `@session名 停止` — stop a session
-- `状态` — get status of all sessions
-
-## Architecture
+## 架构
 
 ```
-cc-monitor.sh           # Single entry point
+cc-monitor.sh           # 唯一入口
 ├── lib/
-│   ├── config.sh       # Config loader (INI + env var override)
-│   ├── hooks.sh        # CC hook handlers
-│   ├── watchdog.sh     # Stuck session detection
-│   ├── tmux.sh         # tmux utilities
-│   ├── notify.sh       # Notification dispatcher
-│   ├── marker.sh       # Session state files
-│   └── remote-input.sh # Command parsing + security + daemon
-├── channels/           # Outbound notification plugins
-│   ├── wechat.sh       # WeChat via OpenClaw CLI
-│   ├── dingtalk.sh     # DingTalk webhook
-│   ├── feishu.sh       # Feishu webhook
-│   └── _template.sh    # Template for new channels
-└── inputs/             # Inbound message plugins
-    ├── wechat.sh       # WeChat message polling
-    └── _template.sh    # Template for new inputs
+│   ├── config.sh       # 配置加载（INI + 环境变量 + 双模式）
+│   ├── hooks.sh        # CC hook 处理器
+│   ├── watchdog.sh     # 卡住检测 + 自动恢复
+│   ├── tmux.sh         # tmux 工具函数
+│   ├── notify.sh       # 通知分发（遍历启用的 channels）
+│   └── marker.sh       # 会话状态文件
+├── channels/           # 通知渠道插件
+│   ├── dingtalk.sh     # 钉钉 webhook（强通知）
+│   ├── feishu.sh       # 飞书 webhook（直连模式）
+│   ├── feishu-openclaw.sh  # 飞书 openclaw（龙虾模式）
+│   ├── wechat.sh       # 微信 openclaw（龙虾模式）
+│   └── _template.sh    # 新渠道模板
+└── docs/
+    └── plans/          # 开发计划
 ```
 
-### Adding a new channel
+### 添加新渠道
 
-1. Copy `channels/_template.sh` to `channels/yourchannel.sh`
-2. Implement `channel_send()` function
-3. Add `[channel:yourchannel]` section to config
-4. Done — notify.sh auto-discovers new channels
+1. 复制 `channels/_template.sh` 到 `channels/你的渠道.sh`
+2. 实现 `channel_send()` 函数
+3. 在配置文件中添加 `[channel:你的渠道]` section
+4. 完成 — notify.sh 自动发现新渠道
 
-## Platform Support
+## 卸载
 
-| Platform | Status |
-|----------|--------|
-| Linux (Ubuntu/Debian) | Fully supported |
-| WSL (Windows) | Fully supported |
-| macOS | Partial — `grep -P`, `flock`, `md5sum` unavailable by default. Install GNU tools via Homebrew. |
-| Windows native | Not supported (requires tmux) |
+```bash
+./install.sh --uninstall
+```
 
-## Related Projects
+## 平台支持
 
-- **[codesop](https://github.com/veniai/codesop)** — AI Coding SOP for structured development workflows with Claude Code
-- **[Claude-to-IM](https://github.com/veniai/Claude-to-IM-skill)** — Bridge Claude Code to IM platforms
+| 平台 | 状态 |
+|------|------|
+| Linux (Ubuntu/Debian) | 完全支持 |
+| WSL (Windows) | 完全支持 |
+| macOS | 部分 — 缺少 `grep -P`、`flock`、`md5sum`。可通过 Homebrew 安装 GNU 工具。 |
+| Windows 原生 | 不支持（依赖 tmux） |
 
-## License
+## 相关项目
+
+- **[OpenClaw（龙虾）](https://github.com/veniai/openclaw)** — IM 桥接平台，提供微信/飞书双向通信
+- **[Claude-to-IM](https://github.com/veniai/Claude-to-IM-skill)** — Claude Code 桥接到 IM 平台
+- **[codesop](https://github.com/veniai/codesop)** — AI 编码 SOP
+
+## 许可证
 
 [MIT](LICENSE)
