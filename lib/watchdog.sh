@@ -12,10 +12,9 @@ handle_watchdog() {
   while read -r session pane_id; do
     [[ -z "$session" ]] && continue
 
-    local marker target
+    local marker
     marker=$(marker_path "$session")
-    target=$(config_get "channel:wechat:target" "")
-    marker_ensure "$session" "$target"
+    marker_ensure "$session"
 
     # Only capture visible screen — scrollback may contain stale spinners
     pane_text=$(capture_pane "$pane_id")

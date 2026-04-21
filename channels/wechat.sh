@@ -11,7 +11,8 @@ channel_send() {
   target=$(config_get "channel:wechat:openclaw_target" "")
   [[ -z "$account" || -z "$target" ]] && return 1
 
-  local msg_with_session="${full_msg}\n\n📌 ${TMUX_SESSION:-unknown}"
+  local msg_with_session
+  printf -v msg_with_session '%s\n\n📌 %s' "$full_msg" "${TMUX_SESSION:-unknown}"
 
   local _i
   for _i in 1 2 3; do

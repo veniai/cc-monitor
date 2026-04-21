@@ -1,7 +1,5 @@
 # cc-monitor
 
-[English](README.en.md) | 中文
-
 Claude Code 远程监控工具。任务完成时收到通知，自动恢复卡住的会话。
 
 ```

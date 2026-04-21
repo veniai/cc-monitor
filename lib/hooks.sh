@@ -192,9 +192,7 @@ handle_hook_main() {
 
   TMUX_SESSION=$(find_tmux_session) || exit 0
 
-  local target
-  target=$(config_get "channel:wechat:target" "")
-  marker_ensure "$TMUX_SESSION" "$target"
+  marker_ensure "$TMUX_SESSION"
 
   case "$event" in
     StopFailure)       handle_stop_failure ;;

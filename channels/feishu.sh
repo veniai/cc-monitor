@@ -9,7 +9,8 @@ channel_send() {
   webhook=$(config_get "channel:feishu:webhook" "")
   [[ -z "$webhook" ]] && return 1
 
-  local msg_with_session="${full_msg}\n\n📌 ${TMUX_SESSION:-unknown}"
+  local msg_with_session
+  printf -v msg_with_session '%s\n\n📌 %s' "$full_msg" "${TMUX_SESSION:-unknown}"
   local payload
   payload=$(jq -n --arg text "$msg_with_session" '{msg_type:"text",content:{text:$text}}')
 
