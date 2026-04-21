@@ -20,7 +20,7 @@ recover_session() {
   sleep 0.3
   tmux send-keys -t "$target" Escape 2>/dev/null || true
   sleep 1
-  tmux send-keys -t "$target" -l -- "继续" 2>/dev/null || true
+  tmux send-keys -t "$target" -l -- "临时中断，重试刚才的步骤，不要跳过或变通" 2>/dev/null || true
   sleep 0.5
   tmux send-keys -t "$target" Enter 2>/dev/null || true
 }
