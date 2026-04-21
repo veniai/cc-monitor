@@ -188,6 +188,7 @@ handle_hook_main() {
   HOOK_TOOL_INPUT="$tool_input"
 
   dump_debug
+  [[ "${DEBUG_MODE:-false}" == "true" ]] && echo "[cc-monitor] mode=${CC_MODE:-unknown} session=$TMUX_SESSION event=$event" >&2
 
   TMUX_SESSION=$(find_tmux_session) || exit 0
 
@@ -203,20 +204,3 @@ handle_hook_main() {
   esac
 }
 
-# Codex CLI stop handler
-handle_codex_stop() {
-  local input msg session pane_cmd
-  input=$(cat)
-  session=$(find_tmux_session) || { printf '%s\n' '{}'; return 0; }
-  pane_cmd=$(tmux list-panes -t "$TMUX_PANE" -F '#{pane_current_command}' 2>/dev/null)
-  # Only handle if NOT a Claude session (Claude stops go through handle_hook_main)
-  [[ "$pane_cmd" != "claude" ]] || { printf '%s\n' '{}'; return 0; }
-
-  msg=$(printf '%s' "$input" | jq -r '.last_assistant_message // empty')
-  TARGET=$(config_get "channel:wechat:target" "")
-  [[ -z "$msg" ]] && msg="(Codex 任务完成，无输出摘要)"
-  notify_user \
-    "**[Codex Monitor]** ${session} 任务完成:\n\n$(truncate_str "$msg" 1500)" \
-    "${session} ✓ Codex完成"
-  printf '%s\n' '{}'
-}
