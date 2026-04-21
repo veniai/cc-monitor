@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# WeChat channel — via OpenClaw CLI (龙虾模式)
+# Feishu channel — via OpenClaw CLI (龙虾模式)
 
 channel_send() {
   local full_msg="$1"
   local short_msg="${2:-$full_msg}"
   local account target channel
 
-  channel=$(config_get "channel:wechat:openclaw_channel" "openclaw-weixin")
-  account=$(config_get "channel:wechat:openclaw_account" "")
-  target=$(config_get "channel:wechat:openclaw_target" "")
+  channel=$(config_get "channel:feishu-openclaw:openclaw_channel" "openclaw-feishu")
+  account=$(config_get "channel:feishu-openclaw:openclaw_account" "")
+  target=$(config_get "channel:feishu-openclaw:openclaw_target" "")
   [[ -z "$account" || -z "$target" ]] && return 1
 
   local msg_with_session="${full_msg}\n\n📌 ${TMUX_SESSION:-unknown}"
