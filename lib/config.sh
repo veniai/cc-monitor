@@ -73,13 +73,14 @@ _config_apply_env() {
 
 # Export commonly used values as globals
 _config_export_globals() {
+    CC_MODE="$(config_get "monitor:mode" "direct")"
     MARKER_DIR="$(config_get "monitor:marker_dir" "/tmp/cc-monitor")"
     WATCHDOG_INTERVAL="$(config_get "monitor:watchdog_interval" "300")"
     AUTO_RECOVERY_MAX="$(config_get "monitor:auto_recovery_max" "2")"
     SAFE_TOOLS_LIST="$(config_get "monitor:safe_tools" "Read,Glob,Grep")"
     DEBUG_MODE="$(config_get "monitor:debug" "false")"
 
-    export MARKER_DIR WATCHDOG_INTERVAL AUTO_RECOVERY_MAX SAFE_TOOLS_LIST DEBUG_MODE
+    export CC_MODE MARKER_DIR WATCHDOG_INTERVAL AUTO_RECOVERY_MAX SAFE_TOOLS_LIST DEBUG_MODE
 }
 
 # Main entry: load config once
@@ -104,37 +105,57 @@ config_get() {
 
 # Validate required fields for enabled channels
 config_validate() {
-    local enabled errors=0
+    local mode errors=0
+    mode="$(config_get "monitor:mode" "direct")"
 
-    # wechat
-    enabled="$(config_get "channel:wechat:enabled" "false")"
-    if [[ "$enabled" == "true" ]]; then
-        if [[ -z "$(config_get "channel:wechat:account" "")" ]]; then
-            echo "[WARN] channel:wechat enabled but 'account' is empty" >&2
-            ((errors++))
-        fi
-        if [[ -z "$(config_get "channel:wechat:target" "")" ]]; then
-            echo "[WARN] channel:wechat enabled but 'target' is empty" >&2
-            ((errors++))
-        fi
-    fi
-
-    # dingtalk
+    # dingtalk — 两个模式都需要 webhook
+    local enabled webhook
     enabled="$(config_get "channel:dingtalk:enabled" "false")"
     if [[ "$enabled" == "true" ]]; then
-        if [[ -z "$(config_get "channel:dingtalk:webhook" "")" ]]; then
+        webhook="$(config_get "channel:dingtalk:webhook" "")"
+        if [[ -z "$webhook" ]]; then
             echo "[WARN] channel:dingtalk enabled but 'webhook' is empty" >&2
             ((errors++))
         fi
     fi
 
-    # feishu
-    enabled="$(config_get "channel:feishu:enabled" "false")"
-    if [[ "$enabled" == "true" ]]; then
-        if [[ -z "$(config_get "channel:feishu:webhook" "")" ]]; then
-            echo "[WARN] channel:feishu enabled but 'webhook' is empty" >&2
-            ((errors++))
+    if [[ "$mode" == "direct" ]]; then
+        # 直连模式：feishu 用 webhook
+        enabled="$(config_get "channel:feishu:enabled" "false")"
+        if [[ "$enabled" == "true" ]]; then
+            webhook="$(config_get "channel:feishu:webhook" "")"
+            if [[ -z "$webhook" ]]; then
+                echo "[WARN] channel:feishu enabled but 'webhook' is empty" >&2
+                ((errors++))
+            fi
         fi
+    elif [[ "$mode" == "openclaw" ]]; then
+        # 龙虾模式：wechat / feishu-openclaw 需要 openclaw 配置
+        enabled="$(config_get "channel:wechat:enabled" "false")"
+        if [[ "$enabled" == "true" ]]; then
+            if [[ -z "$(config_get "channel:wechat:openclaw_account" "")" ]]; then
+                echo "[WARN] channel:wechat enabled but 'openclaw_account' is empty" >&2
+                ((errors++))
+            fi
+            if [[ -z "$(config_get "channel:wechat:openclaw_target" "")" ]]; then
+                echo "[WARN] channel:wechat enabled but 'openclaw_target' is empty" >&2
+                ((errors++))
+            fi
+        fi
+        enabled="$(config_get "channel:feishu-openclaw:enabled" "false")"
+        if [[ "$enabled" == "true" ]]; then
+            if [[ -z "$(config_get "channel:feishu-openclaw:openclaw_account" "")" ]]; then
+                echo "[WARN] channel:feishu-openclaw enabled but 'openclaw_account' is empty" >&2
+                ((errors++))
+            fi
+            if [[ -z "$(config_get "channel:feishu-openclaw:openclaw_target" "")" ]]; then
+                echo "[WARN] channel:feishu-openclaw enabled but 'openclaw_target' is empty" >&2
+                ((errors++))
+            fi
+        fi
+    else
+        echo "[ERROR] Unknown mode '$mode' — must be 'direct' or 'openclaw'" >&2
+        ((errors++))
     fi
 
     return "$errors"
