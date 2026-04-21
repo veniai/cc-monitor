@@ -39,7 +39,7 @@ handle_watchdog() {
         prev_token=$(marker_read "$session" "last_tokens")
 
         if [[ -z "$prev_token" || "$prev_token" != "$token_norm" ]]; then
-          marker_update "$session" ".last_tokens = $token_norm | .token_first_seen_at = $now | .auto_recovery_count = 0 | .screen_md5_stable_count = 0"
+          marker_update "$session" ".last_tokens = $token_norm | .token_first_seen_at = $now | .auto_recovery_count = 0 | .screen_md5_stable_count = 0 | .stop_seen = false"
           continue
         fi
 
@@ -71,6 +71,9 @@ handle_watchdog() {
       fi
     else
       # --- No spinner: MD5 fallback detection ---
+      # Skip if no marker file — never started a task, idle pane
+      [[ ! -f "$marker" ]] && continue
+
       # Skip if task completed normally (Stop hook set stop_seen=true)
       local stop_seen
       stop_seen=$(marker_read "$session" "stop_seen") || stop_seen="false"
@@ -106,7 +109,7 @@ _watchdog_recover() {
   now=$(date +%s)
   count=$(marker_read "$session" "auto_recovery_count") || count=0
 
-  if (( count >= 2 )); then
+  if (( count >= AUTO_RECOVERY_MAX )); then
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
       echo "[DRY-RUN] $session 已恢复2次未生效 ($reason)"
     else

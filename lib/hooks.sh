@@ -118,10 +118,10 @@ handle_stop_failure() {
   sleep "$backoff"
 
   local before after
-  before=$(capture_pane "$TMUX_SESSION" -S -5 | md5sum | awk '{print $1}')
-  recover_session "$TMUX_SESSION"
+  before=$(capture_pane "$TMUX_PANE" -S -5 | md5sum | awk '{print $1}')
+  recover_session "$TMUX_PANE"
   sleep 2
-  after=$(capture_pane "$TMUX_SESSION" -S -5 | md5sum | awk '{print $1}')
+  after=$(capture_pane "$TMUX_PANE" -S -5 | md5sum | awk '{print $1}')
 
   if [[ "$before" == "$after" ]]; then
     notify_user \
