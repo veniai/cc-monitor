@@ -107,8 +107,8 @@ handle_stop_failure() {
 
   if (( count >= 5 )); then
     local msg
-    printf -v msg '**[Monitor]** %s 连续%s次 API 错误，请手动检查' "$TMUX_SESSION" "$count"
-    notify_user "$msg" "${TMUX_SESSION} ⚠ API错误x${count}"
+    printf -v msg '**[Monitor]** %s 连续%s次 API 错误，请手动检查\n原因: %s' "$TMUX_SESSION" "$count" "$HOOK_REASON"
+    notify_user "$msg" "${TMUX_SESSION} ⚠ API错误x${count}: $(truncate_str "$HOOK_REASON" 50)"
     marker_cleanup "$TMUX_SESSION"
     return 0
   fi
