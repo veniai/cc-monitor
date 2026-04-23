@@ -79,7 +79,7 @@ handle_stop() {
   local msg
   printf -v msg '**[Monitor]** %s 任务完成:\n\n%s' "$TMUX_SESSION" "$summary"
   notify_user "$msg" "${TMUX_SESSION} ✓ 完成"
-  marker_update "$TMUX_SESSION" '.stop_seen = true' 2>/dev/null || true
+  marker_update "$TMUX_SESSION" '.stop_seen = true | del(.quota_resets_at)' 2>/dev/null || true
 }
 
 handle_stop_failure() {
@@ -89,6 +89,26 @@ handle_stop_failure() {
     notify_user "$msg" "${TMUX_SESSION} ✗ 错误: $(truncate_str "$HOOK_REASON" 50)"
     marker_cleanup "$TMUX_SESSION"
     return 0
+  fi
+
+  # --- Quota limit detection: suppress retry until reset time ---
+  if [[ "$HOOK_REASON" == "rate_limit" ]]; then
+    local pane_text reset_match reset_ts
+    pane_text=$(capture_pane "$TMUX_PANE")
+    reset_match=$(echo "$pane_text" | grep -oP '\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?= 重置)' | tail -1)
+    if [[ -n "$reset_match" ]]; then
+      reset_ts=$(date -d "$reset_match" +%s 2>/dev/null) || reset_ts=0
+      if (( reset_ts > 0 )); then
+        marker_update "$TMUX_SESSION" ".quota_resets_at = $reset_ts | .auto_resume_count = 0 | .screen_md5_stable_count = 0"
+        local reset_display
+        reset_display=$(date -d "@$reset_ts" '+%Y-%m-%d %H:%M:%S')
+        local msg
+        printf -v msg '**[Monitor]** %s 5小时限额已满，%s 后自动恢复（最晚约5分钟内）' "$TMUX_SESSION" "$reset_display"
+        notify_user "$msg" "${TMUX_SESSION} ⏸ 限额满，${reset_display} 恢复"
+        return 0
+      fi
+    fi
+    # Parse failed — fall through to normal retry
   fi
 
   if ! is_claude_alive "$TMUX_PANE"; then

@@ -24,6 +24,28 @@ handle_watchdog() {
 
     now=$(date +%s)
 
+    # --- Quota suppress: skip recovery until reset time ---
+    local quota_resets_at
+    quota_resets_at=$(marker_read "$session" "quota_resets_at")
+    if [[ -n "$quota_resets_at" && "$quota_resets_at" != "null" && "$quota_resets_at" != "" ]]; then
+      if (( now < quota_resets_at )); then
+        continue
+      fi
+      # Quota expired — recover directly
+      marker_update "$session" "del(.quota_resets_at) | .auto_recovery_count = 0 | .screen_md5_stable_count = 0 | .token_first_seen_at = $now"
+      if is_claude_alive "$pane_id"; then
+        recover_session "$pane_id"
+        notify_user \
+          "**[Monitor]** $session 限额已恢复，已自动重试" \
+          "$session ✓ 限额恢复，已重试"
+      else
+        notify_user \
+          "**[Monitor]** $session 限额已恢复，但进程已退出，请手动检查" \
+          "$session ⚠ 限额恢复但进程退出"
+      fi
+      continue
+    fi
+
     local use_md5_fallback=true
 
     if [[ -n "$spinner_line" ]]; then
