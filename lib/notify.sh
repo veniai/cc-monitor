@@ -20,6 +20,8 @@ notify_user() {
 
     # shellcheck source=/dev/null
     source "$plugin"
-    channel_send "$full_msg" "$short_msg" || true
+    if ! channel_send "$full_msg" "$short_msg" 2>"${MARKER_DIR:-/tmp/cc-monitor}/debug/notify-${channel_name}-$(date +%s).log"; then
+      echo "[$(date '+%H:%M:%S')] $channel_name 通知发送失败" >> "${MARKER_DIR:-/tmp/cc-monitor}/debug/notify-failures.log"
+    fi
   done
 }
