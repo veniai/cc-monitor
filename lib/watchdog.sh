@@ -24,12 +24,15 @@ handle_watchdog() {
 
     now=$(date +%s)
 
+    local use_md5_fallback=true
+
     if [[ -n "$spinner_line" ]]; then
       # Spinner detected: task is running, ensure marker
       marker_ensure "$session"
-      # --- Spinner detected: precise token/wait detection ---
+      use_md5_fallback=false
+
       if [[ -n "$token_raw" ]]; then
-        # Token-based detection
+        # --- Token-based detection ---
         if [[ "$token_raw" == *[kK] ]]; then
           token_norm=$(echo "${token_raw%[kK]}" | awk '{printf "%.0f", $1 * 1000}')
         else
@@ -54,8 +57,9 @@ handle_watchdog() {
 
         _watchdog_recover "$session" "$pane_id" "spinner token 15min unchanged"
       else
-        # No tokens — check spinner wait time (10 min)
-        wait_raw=$(echo "$spinner_line" | grep -oP '\(\K\d+(h\s+\d+)?m\s+\d+s' | tail -1)
+        # --- No tokens: check spinner wait time ---
+        # Support both "(1m 30s)" and "(thought for 2s)" formats
+        wait_raw=$(echo "$spinner_line" | grep -oP '(\(\K\d+(h\s+\d+)?m\s+\d+s|for\s+\K\d+h(\s+\d+m)?\s*\d*s|for\s+\K\d+m\s+\d+s|for\s+\K\d+s)' | tail -1)
         if [[ -n "$wait_raw" ]]; then
           wait_secs=$(echo "$wait_raw" | awk '{
             h=0; m=0; s=0;
@@ -67,10 +71,17 @@ handle_watchdog() {
           if (( wait_secs >= 600 )); then
             _watchdog_recover "$session" "$pane_id" "spinner wait ${wait_raw}"
           fi
+        else
+          # Spinner present but no tokens and no parseable wait time
+          # (e.g. "thought for 2s" where time is stale/unparseable)
+          # Fall through to MD5 check
+          use_md5_fallback=true
         fi
       fi
-    else
-      # --- No spinner: MD5 fallback detection ---
+    fi
+
+    # --- MD5 fallback: no actionable spinner ---
+    if $use_md5_fallback; then
       # Skip if no marker file — never started a task, idle pane
       [[ ! -f "$marker" ]] && continue
 
@@ -80,7 +91,10 @@ handle_watchdog() {
       [[ "$stop_seen" == "true" ]] && continue
 
       local screen_md5 prev_md5 stable_count
-      screen_md5=$(printf '%s' "$pane_text" | md5sum | awk '{print $1}')
+      # Strip dynamic UI elements before hashing:
+      # - Spinner lines (animated icons ·✢✳✶✻✽*)
+      # - Agent expand/collapse toggles (●/spaces)
+      screen_md5=$(printf '%s' "$pane_text" | grep -vP '^[·✢✳✶✻✽*]' | grep -vP '^\s*(●|  )Agent\(' | md5sum | awk '{print $1}')
       prev_md5=$(marker_read "$session" "screen_md5") || prev_md5=""
 
       if [[ "$screen_md5" == "$prev_md5" ]]; then
