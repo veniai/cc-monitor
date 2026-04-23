@@ -69,7 +69,7 @@ handle_watchdog() {
         fi
 
         first_seen=$(marker_read "$session" "token_first_seen_at") || first_seen=0
-        (( now - first_seen < 900 )) && continue
+        (( now - first_seen < 1200 )) && continue
 
         wait_indicator=$(echo "$spinner_line" | grep -oP '\(\K\d+(h\s+\d+)?m\s+\d+s' | tail -1)
         if [[ -z "$wait_indicator" ]]; then
@@ -77,11 +77,11 @@ handle_watchdog() {
           continue
         fi
 
-        _watchdog_recover "$session" "$pane_id" "spinner token 15min unchanged"
+        _watchdog_recover "$session" "$pane_id" "spinner token 20min unchanged"
       else
         # --- No tokens: check spinner wait time ---
         # Support both "(1m 30s)" and "(thought for 2s)" formats
-        wait_raw=$(echo "$spinner_line" | grep -oP '(\(\K\d+(h\s+\d+)?m\s+\d+s|for\s+\K\d+h(\s+\d+m)?\s*\d*s|for\s+\K\d+m\s+\d+s|for\s+\K\d+s)' | tail -1)
+        wait_raw=$(echo "$spinner_line" | grep -oP '(\(\K\d+(h\s+\d+)?m\s+\d+s|for\s+\K\d+h(\s+\d+m)?\s*\d*s|for\s+\K\d+m\s+\d+s|for\s+\K\d+s)' | head -1)
         if [[ -n "$wait_raw" ]]; then
           wait_secs=$(echo "$wait_raw" | awk '{
             h=0; m=0; s=0;
@@ -90,7 +90,7 @@ handle_watchdog() {
             }
             print h*3600+m*60+s
           }')
-          if (( wait_secs >= 600 )); then
+          if (( wait_secs >= 1200 )); then
             _watchdog_recover "$session" "$pane_id" "spinner wait ${wait_raw}"
           fi
         else
@@ -123,8 +123,8 @@ handle_watchdog() {
         # Screen unchanged
         stable_count=$(marker_read "$session" "screen_md5_stable_count") || stable_count=0
         (( stable_count++ ))
-        # 3 consecutive unchanged checks (~15 min at 5min interval)
-        if (( stable_count >= 3 )); then
+        # 4 consecutive unchanged checks (~20 min at 5min interval)
+        if (( stable_count >= 4 )); then
           _watchdog_recover "$session" "$pane_id" "screen frozen (MD5 unchanged x${stable_count})"
           marker_update "$session" ".screen_md5_stable_count = 0"
         else
