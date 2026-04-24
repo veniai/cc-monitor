@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cc-monitor — Claude Code remote monitoring tool
+# cc-monitor v1.1.0 — Claude Code remote monitoring tool
 # Usage: cc-monitor.sh {hook|watchdog [--dry-run]}
 
 set -u

@@ -1,5 +1,7 @@
 # cc-monitor
 
+> **v1.1.0**
+
 Claude Code 远程监控工具。任务完成时收到通知，自动恢复卡住的会话。
 
 ```
@@ -136,6 +138,31 @@ agent_name=cc-monitor
 1. 安装龙虾：`npm install -g openclaw`
 2. 运行 `openclaw channels login --channel weixin`（或 feishu）
 3. install.sh 会自动读取龙虾配置
+
+## 核心功能
+
+### Hook（事件驱动）
+
+Claude Code 内置 hook 机制，在关键生命周期节点自动触发：
+
+| 事件 | 行为 |
+|------|------|
+| **Stop** | 任务正常完成 → 发送完成通知 |
+| **StopFailure** | API 报错 → 自动恢复；检测到 5 小时配额限额 → 解析重置时间，暂停重试，到时间自动恢复 |
+| **PermissionRequest** | 权限请求 → 安全工具自动批准，其余通知用户，超时自动批准 |
+| **SessionEnd** | 会话结束 → 清理状态 |
+
+**配额限额检测**：扫描终端屏幕上的重置时间（如 `2026-04-24 19:00:00 重置`），写入倒计时状态。Watchdog 到期后自动恢复，无需手动干预。
+
+### Watchdog（定时轮询）
+
+每 5 分钟由 cron 触发，扫描所有 Claude Code 的 tmux 窗口，三道防线统一 **20 分钟**阈值：
+
+1. **Token 不变** — spinner 显示的 token 数 20 分钟没变 → 卡死
+2. **等待时间** — spinner 没有 token 但有等待时间，≥ 20 分钟 → 卡死
+3. **屏幕冻结** — 屏幕内容（去掉动态 spinner 后）连续 4 次不变（≈ 20 分钟）→ 卡死
+
+**恢复策略**：自动恢复最多 2 次，2 次都没效则只告警不操作，避免反复干扰。
 
 ## 使用方式
 
