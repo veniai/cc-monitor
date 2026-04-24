@@ -71,7 +71,7 @@ handle_watchdog() {
         first_seen=$(marker_read "$session" "token_first_seen_at") || first_seen=0
         (( now - first_seen < 1200 )) && continue
 
-        wait_indicator=$(echo "$spinner_line" | grep -oP '\(\K\d+(h\s+\d+)?m\s+\d+s' | tail -1)
+        wait_indicator=$(echo "$spinner_line" | grep -oP '\(\K\d+(h\s+\d+)?m\s+\d+s' | head -1)
         if [[ -z "$wait_indicator" ]]; then
           marker_update "$session" ".token_first_seen_at = $now"
           continue
