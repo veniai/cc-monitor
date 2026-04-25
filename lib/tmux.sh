@@ -13,6 +13,19 @@ find_tmux_session() {
     | awk -v pane="$TMUX_PANE" '$2 == pane { print $1; exit }'
 }
 
+# Wait for pane content to stabilize (text fully delivered)
+# Polls until md5 unchanged for 2 consecutive checks, max 20s
+_wait_pane_stable() {
+  local target="${1:?target required}"
+  local prev="" curr
+  for _i in $(seq 1 20); do
+    sleep 1
+    curr=$(tmux capture-pane -t "$target" -p -S -5 2>/dev/null | md5sum)
+    [[ "$curr" == "$prev" && -n "$prev" ]] && return 0
+    prev="$curr"
+  done
+}
+
 # Send recovery key sequence to a stuck Claude Code session
 recover_session() {
   local target="${1:?target pane/session required}"
@@ -21,9 +34,9 @@ recover_session() {
   tmux send-keys -t "$target" Escape 2>/dev/null || true
   sleep 1
   tmux send-keys -t "$target" -l -- "临时中断，重试刚才的步骤，不要跳过或变通" 2>/dev/null || true
-  sleep 2
+  _wait_pane_stable "$target"
   tmux send-keys -t "$target" Escape 2>/dev/null || true
-  sleep 2
+  sleep 1
   tmux send-keys -t "$target" Enter 2>/dev/null || true
 }
 
