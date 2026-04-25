@@ -75,7 +75,7 @@ get_tool_detail() {
 
 handle_stop() {
   local summary="${HOOK_LAST_MSG:-(任务已完成，无输出摘要)}"
-  summary="$(truncate_str "$summary" 3000)"
+  summary="$(truncate_str "$summary" 5000)"
   local msg
   printf -v msg '**[Monitor]** %s 任务完成:\n\n%s' "$TMUX_SESSION" "$summary"
   notify_user "$msg" "${TMUX_SESSION} ✓ 完成"
