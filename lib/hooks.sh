@@ -120,7 +120,7 @@ handle_stop_failure() {
   count=$(marker_read "$TMUX_SESSION" "auto_resume_count") || count=0
   last_retry=$(marker_read "$TMUX_SESSION" "last_retry_at") || last_retry=0
   now=$(date +%s)
-  (( now - last_retry > 300 )) && count=0
+  (( now - last_retry > 600 )) && count=0
 
   if (( count >= 5 )); then
     local msg
