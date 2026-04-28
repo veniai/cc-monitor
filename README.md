@@ -138,6 +138,7 @@ agent_name=cc-monitor
 1. 安装龙虾：`npm install -g openclaw`
 2. 运行 `openclaw channels login --channel weixin`（或 feishu）
 3. install.sh 会自动读取龙虾配置
+4. 安装完成后，workspace 目录自动生成 `AGENTS.md`、`TOOLS.md`、`SOUL.md` 等配置文件，子 agent 即可操作
 
 ## 核心功能
 
@@ -208,6 +209,7 @@ cc-monitor.sh           # 唯一入口
 │   ├── feishu-openclaw.sh  # 飞书 openclaw（龙虾模式）
 │   ├── wechat.sh       # 微信 openclaw（龙虾模式）
 │   └── _template.sh    # 新渠道模板
+├── templates/          # OpenClaw workspace 模板（龙虾模式安装时自动部署）
 └── docs/
     └── plans/          # 开发计划
 ```
