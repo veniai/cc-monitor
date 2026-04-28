@@ -446,6 +446,26 @@ do_uninstall() {
         info "Removed hook for $event"
       fi
     done
+    # Also remove codex hook entries
+    local codex_command="bash $HOOK_SCRIPT codex"
+    local codex_events=("Stop")
+    for event in "${codex_events[@]}"; do
+      local existing
+      existing="$(jq -r --arg event "$event" --arg cmd "$codex_command" '
+        .hooks[$event] // [] | map(select(.hooks[]?.command == $cmd)) | length
+      ' "$SETTINGS_FILE" 2>/dev/null || echo "0")"
+      if [[ "$existing" != "0" ]]; then
+        local tmp
+        tmp="$(mktemp)"
+        jq --arg event "$event" --arg cmd "$codex_command" '
+          .hooks[$event] = (.hooks[$event] // []) | map(
+            .hooks = (.hooks // []) | map(select(.command != $cmd))
+          ) | map(select((.hooks | length) > 0))
+        ' "$SETTINGS_FILE" > "$tmp" && mv "$tmp" "$SETTINGS_FILE"
+        info "Removed codex hook for $event"
+      fi
+    done
+
     local tmp
     tmp="$(mktemp)"
     jq '.hooks = (.hooks | to_entries | map(select(.value | length > 0)) | from_entries)
