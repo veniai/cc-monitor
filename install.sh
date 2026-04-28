@@ -41,6 +41,7 @@ Modes:
 Options:
   --interactive             Prompt for each configuration value
   --enable-watchdog         Register watchdog cron job (every 5 min)
+  --enable-codex            Register Stop hook for Codex CLI
   --uninstall               Remove hooks, cron, optionally config
   --help                    Show this help
 
@@ -53,6 +54,9 @@ Examples:
 
   # OpenClaw mode, non-interactive
   install.sh --mode openclaw --enable-watchdog
+
+  # Direct mode with Codex CLI support
+  install.sh --mode direct --enable-codex
 HELP
 }
 
@@ -383,6 +387,40 @@ register_cron() {
   info "Watchdog cron registered (every 5 minutes)"
 }
 
+register_codex_hook() {
+  local codex_command="bash $HOOK_SCRIPT codex"
+  local settings="$SETTINGS_FILE"
+
+  if [[ ! -f "$settings" ]]; then
+    mkdir -p "$(dirname "$settings")"
+    echo '{}' > "$settings"
+  fi
+
+  local existing
+  existing="$(jq -r --arg cmd "$codex_command" '
+    .hooks["Stop"] // [] | map(select(.hooks[]?.command == $cmd)) | length
+  ' "$settings" 2>/dev/null || echo "0")"
+
+  if [[ "$existing" != "0" ]]; then
+    info "Codex Stop hook already registered — skipping"
+    return 0
+  fi
+
+  local entry
+  entry="$(jq -n --arg cmd "$codex_command" '{
+    matcher: "",
+    hooks: [{ type: "command", command: $cmd }]
+  }')"
+
+  local tmp
+  tmp="$(mktemp)"
+  jq --argjson entry "$entry" '
+    .hooks["Stop"] = (.hooks["Stop"] // []) + [$entry]
+  ' "$settings" > "$tmp" && mv "$tmp" "$settings"
+
+  info "Registered Codex Stop hook in $settings"
+}
+
 # ---------------------------------------------------------------------------
 # uninstall
 # ---------------------------------------------------------------------------
@@ -439,7 +477,7 @@ do_uninstall() {
 # Main
 # ---------------------------------------------------------------------------
 main() {
-  local mode="" interactive=false enable_watchdog=false do_uninstall_flag=false
+  local mode="" interactive=false enable_watchdog=false enable_codex=false do_uninstall_flag=false
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -455,6 +493,10 @@ main() {
         ;;
       --enable-watchdog)
         enable_watchdog=true
+        shift
+        ;;
+      --enable-codex)
+        enable_codex=true
         shift
         ;;
       --uninstall)
@@ -501,6 +543,18 @@ main() {
   check_dependencies
   generate_config "$mode" "$interactive"
 
+  # Warn if no channels enabled in non-interactive mode
+  if ! $interactive; then
+    local conf="$CONFIG_DIR/config.conf"
+    if [[ -f "$conf" ]]; then
+      local any_enabled
+      any_enabled="$(grep -c 'enabled=true' "$conf" 2>/dev/null || echo "0")"
+      if [[ "$any_enabled" == "0" ]]; then
+        warn "No notification channels are enabled. Edit $CONFIG_DIR/config.conf to add your webhook URLs and enable channels before using cc-monitor."
+      fi
+    fi
+  fi
+
   if $interactive; then
     if [[ "$mode" == "direct" ]]; then
       prompt_direct_config
@@ -514,6 +568,10 @@ main() {
 
   register_hooks
   register_cron "$enable_watchdog"
+
+  if $enable_codex; then
+    register_codex_hook
+  fi
 
   echo ""
   info "安装完成!"
