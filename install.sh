@@ -360,7 +360,7 @@ register_hooks() {
     tmp="$(mktemp)"
     jq --arg event "$event" --argjson entry "$entry" '
       .hooks[$event] = (.hooks[$event] // []) + [$entry]
-    ' "$settings" > "$tmp" && mv "$tmp" "$settings"
+    ' "$settings" > "$tmp" && mv "$tmp" "$settings" || { rm -f "$tmp"; }
 
     info "Registered hook for $event"
     changed=true
@@ -416,7 +416,7 @@ register_codex_hook() {
   tmp="$(mktemp)"
   jq --argjson entry "$entry" '
     .hooks["Stop"] = (.hooks["Stop"] // []) + [$entry]
-  ' "$settings" > "$tmp" && mv "$tmp" "$settings"
+  ' "$settings" > "$tmp" && mv "$tmp" "$settings" || { rm -f "$tmp"; }
 
   info "Registered Codex Stop hook in $settings"
 }
@@ -442,7 +442,7 @@ do_uninstall() {
           .hooks[$event] = (.hooks[$event] // []) | map(
             .hooks = (.hooks // []) | map(select(.command != $cmd))
           ) | map(select((.hooks | length) > 0))
-        ' "$SETTINGS_FILE" > "$tmp" && mv "$tmp" "$SETTINGS_FILE"
+        ' "$SETTINGS_FILE" > "$tmp" && mv "$tmp" "$SETTINGS_FILE" || { rm -f "$tmp"; }
         info "Removed hook for $event"
       fi
     done
@@ -461,7 +461,7 @@ do_uninstall() {
           .hooks[$event] = (.hooks[$event] // []) | map(
             .hooks = (.hooks // []) | map(select(.command != $cmd))
           ) | map(select((.hooks | length) > 0))
-        ' "$SETTINGS_FILE" > "$tmp" && mv "$tmp" "$SETTINGS_FILE"
+        ' "$SETTINGS_FILE" > "$tmp" && mv "$tmp" "$SETTINGS_FILE" || { rm -f "$tmp"; }
         info "Removed codex hook for $event"
       fi
     done
@@ -469,7 +469,7 @@ do_uninstall() {
     local tmp
     tmp="$(mktemp)"
     jq '.hooks = (.hooks | to_entries | map(select(.value | length > 0)) | from_entries)
-    ' "$SETTINGS_FILE" > "$tmp" && mv "$tmp" "$SETTINGS_FILE"
+    ' "$SETTINGS_FILE" > "$tmp" && mv "$tmp" "$SETTINGS_FILE" || { rm -f "$tmp"; }
   fi
 
   if crontab -l 2>/dev/null | grep -q "$CRON_MARKER"; then
