@@ -568,7 +568,7 @@ main() {
     local conf="$CONFIG_DIR/config.conf"
     if [[ -f "$conf" ]]; then
       local any_enabled
-      any_enabled="$(grep -c 'enabled=true' "$conf" 2>/dev/null || echo "0")"
+      any_enabled="$(grep -c 'enabled=true' "$conf" 2>/dev/null)" || any_enabled=0
       if [[ "$any_enabled" == "0" ]]; then
         warn "No notification channels are enabled. Edit $CONFIG_DIR/config.conf to add your webhook URLs and enable channels before using cc-monitor."
       fi
