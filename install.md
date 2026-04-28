@@ -42,6 +42,16 @@ chmod 0600 ~/.config/cc-monitor/config.conf
 }
 ```
 
+### 4b. 注册 Codex Stop Hook（可选）
+
+如果使用 OpenAI Codex CLI，在 Codex 的 hooks 配置中添加：
+
+```json
+{
+  "Stop": [{ "matcher": "", "hooks": [{ "type": "command", "command": "bash ~/cc-monitor/cc-monitor.sh codex" }] }]
+}
+```
+
 ### 5. 注册 Watchdog Cron（可选）
 
 ```bash

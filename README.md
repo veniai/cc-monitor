@@ -143,7 +143,7 @@ agent_name=cc-monitor
 
 ### Hook（事件驱动）
 
-Claude Code 内置 hook 机制，在关键生命周期节点自动触发：
+Claude Code / Codex CLI 内置 hook 机制，在关键生命周期节点自动触发：
 
 | 事件 | 行为 |
 |------|------|
@@ -151,6 +151,14 @@ Claude Code 内置 hook 机制，在关键生命周期节点自动触发：
 | **StopFailure** | API 报错 → 自动恢复；检测到 5 小时配额限额 → 解析重置时间，暂停重试，到时间自动恢复 |
 | **PermissionRequest** | 权限请求 → 安全工具自动批准，其余通知用户，超时自动批准 |
 | **SessionEnd** | 会话结束 → 清理状态 |
+
+### Codex 监控
+
+支持 OpenAI Codex CLI 的任务完成通知。当 Codex 任务结束时自动发送摘要通知到配置的 IM 渠道。
+
+```bash
+./cc-monitor.sh codex   # Codex Stop hook 入口（读 JSON from stdin）
+```
 
 **配额限额检测**：扫描终端屏幕上的重置时间（如 `2026-04-24 19:00:00 重置`），写入倒计时状态。Watchdog 到期后自动恢复，无需手动干预。
 
@@ -170,6 +178,12 @@ Claude Code 内置 hook 机制，在关键生命周期节点自动触发：
 
 安装后自动注册为 Claude Code hooks，任务完成/出错/请求权限时自动通知。
 
+### Codex 模式（Codex CLI Stop hook）
+
+```bash
+./cc-monitor.sh codex   # Codex 任务完成时自动触发
+```
+
 ### Watchdog 模式（定时检查）
 
 ```bash
@@ -183,7 +197,7 @@ Claude Code 内置 hook 机制，在关键生命周期节点自动触发：
 cc-monitor.sh           # 唯一入口
 ├── lib/
 │   ├── config.sh       # 配置加载（INI + 环境变量 + 双模式）
-│   ├── hooks.sh        # CC hook 处理器
+│   ├── hooks.sh        # CC/Codex hook 处理器
 │   ├── watchdog.sh     # 卡住检测 + 自动恢复
 │   ├── tmux.sh         # tmux 工具函数
 │   ├── notify.sh       # 通知分发（遍历启用的 channels）

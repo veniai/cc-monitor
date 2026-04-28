@@ -21,6 +21,9 @@ case "${1:-help}" in
   hook)
     handle_hook_main
     ;;
+  codex)
+    handle_codex_stop
+    ;;
   watchdog)
     DRY_RUN=false
     [[ "${2:-}" == "--dry-run" ]] && DRY_RUN=true
@@ -34,6 +37,7 @@ Usage: cc-monitor.sh <command> [options]
 
 Commands:
   hook                CC hooks entry (reads JSON from stdin)
+  codex               Codex CLI stop handler (reads JSON from stdin)
   watchdog [--dry-run]  Check for stuck sessions
   help                Show this help
 
