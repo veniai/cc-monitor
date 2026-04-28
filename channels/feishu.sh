@@ -18,7 +18,7 @@ channel_send() {
   for _i in 1 2 3; do
     curl -sf -X POST "$webhook" \
       -H 'Content-Type: application/json' \
-      -d "$payload" | jq -e '.code == 0' >/dev/null 2>&1 && return 0
+      -d "$payload" | jq -e '.code == 0' >/dev/null && return 0
     sleep 2
   done
   return 1

@@ -32,5 +32,5 @@ channel_send() {
   payload=$(jq -n --arg text "$short_msg" '{msgtype:"text",text:{content:$text}}')
   curl -sf -X POST "$url" \
     -H 'Content-Type: application/json' \
-    -d "$payload" | jq -e '.errcode == 0' >/dev/null 2>&1
+    -d "$payload" | jq -e '.errcode == 0' >/dev/null
 }

@@ -18,10 +18,19 @@ notify_user() {
     enabled=$(config_get "channel:${channel_name}:enabled" "false")
     [[ "$enabled" != "true" ]] && continue
 
+    local err_log="${MARKER_DIR:-/tmp/cc-monitor}/debug/notify-${channel_name}-$(date +%s).log"
     # shellcheck source=/dev/null
     source "$plugin"
-    if ! channel_send "$full_msg" "$short_msg" 2>"${MARKER_DIR:-/tmp/cc-monitor}/debug/notify-${channel_name}-$(date +%s).log"; then
-      echo "[$(date '+%H:%M:%S')] $channel_name 通知发送失败" >> "${MARKER_DIR:-/tmp/cc-monitor}/debug/notify-failures.log"
+    if ! channel_send "$full_msg" "$short_msg" 2>"$err_log"; then
+      local err_detail=""
+      if [[ -f "$err_log" && -s "$err_log" ]]; then
+        err_detail=$(head -1 "$err_log")
+      fi
+      if [[ -n "$err_detail" ]]; then
+        echo "[$(date '+%H:%M:%S')] $channel_name 通知发送失败: $err_detail" >> "${MARKER_DIR:-/tmp/cc-monitor}/debug/notify-failures.log"
+      else
+        echo "[$(date '+%H:%M:%S')] $channel_name 通知发送失败 (无错误详情)" >> "${MARKER_DIR:-/tmp/cc-monitor}/debug/notify-failures.log"
+      fi
     fi
   done
 }
