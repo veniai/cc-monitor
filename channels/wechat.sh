@@ -20,7 +20,7 @@ channel_send() {
       --channel "$channel" \
       --account "$account" \
       --target "$target" \
-      --message "$msg_with_session" >/dev/null 2>&1 && return 0
+      --message "$msg_with_session" >/dev/null && return 0
     sleep 2
   done
   return 1

@@ -6,7 +6,7 @@ channel_send() {
   local short_msg="${2:-$full_msg}"
   local account target channel
 
-  channel=$(config_get "channel:feishu-openclaw:openclaw_channel" "openclaw-feishu")
+  channel=$(config_get "channel:feishu-openclaw:openclaw_channel" "feishu")
   account=$(config_get "channel:feishu-openclaw:openclaw_account" "")
   target=$(config_get "channel:feishu-openclaw:openclaw_target" "")
   [[ -z "$account" || -z "$target" ]] && return 1
@@ -16,11 +16,11 @@ channel_send() {
 
   local _i
   for _i in 1 2 3; do
-    openclaw message send \
+    http_proxy= https_proxy= openclaw message send \
       --channel "$channel" \
       --account "$account" \
       --target "$target" \
-      --message "$msg_with_session" >/dev/null 2>&1 && return 0
+      --message "$msg_with_session" >/dev/null && return 0
     sleep 2
   done
   return 1
