@@ -337,50 +337,63 @@ render_workspace_templates() {
 
   mkdir -p "$workspace"
 
-  # file priority: required (overwrite managed) vs optional (only if absent)
+  # Maps: template filename (lowercase) → workspace filename (canonical uppercase)
+  local -A tmpl_map=(
+    [agents.md]=AGENTS.md
+    [tools.md]=TOOLS.md
+    [soul.md]=SOUL.md
+    [identity.md]=IDENTITY.md
+    [user.md]=USER.md
+  )
   local required_files=("agents.md" "tools.md" "soul.md")
   local optional_files=("identity.md" "user.md")
 
-  for file in "${required_files[@]}" "${optional_files[@]}"; do
-    local src="$templates_dir/$file"
-    local dest="$workspace/$file"
+  for src_name in "${required_files[@]}" "${optional_files[@]}"; do
+    local src="$templates_dir/$src_name"
+    local dest_name="${tmpl_map[$src_name]:-$src_name}"
+    local dest="$workspace/$dest_name"
 
     [[ ! -f "$src" ]] && continue
 
     local is_required=false
     for req in "${required_files[@]}"; do
-      [[ "$file" == "$req" ]] && is_required=true && break
+      [[ "$src_name" == "$req" ]] && is_required=true && break
     done
 
     if [[ ! -f "$dest" ]]; then
       cp "$src" "$dest"
-      info "Created: $file"
+      info "Created: $dest_name"
       continue
     fi
 
-    # File exists — check if it's ours (managed marker)
+    # File exists — check managed marker
     if grep -q 'cc-monitor-managed:' "$dest" 2>/dev/null; then
-      # Managed file — safe to update
-      if ! diff -q "$src" "$dest" &>/dev/null; then
-        cp "$src" "$dest"
-        info "Updated: $file (template newer)"
-      fi
-    else
-      # User-created file
       if $is_required; then
-        if [[ "${INTERACTIVE:-false}" == "true" ]]; then
-          read -rp "$file exists (user-customized). Overwrite? [y/N] " ans
-          if [[ "${ans,,}" == "y" ]]; then
-            cp "$src" "$dest"
-            info "Overwritten: $file"
-          else
-            info "Skipped: $file (user choice)"
-          fi
-        else
-          info "Skipped: $file (user-customized, non-interactive)"
+        # Required + managed: update if template changed
+        if ! diff -q "$src" "$dest" &>/dev/null; then
+          cp "$src" "$dest"
+          info "Updated: $dest_name (template newer)"
         fi
       else
-        info "Skipped: $file (user-customized, optional)"
+        # Optional + managed: user may have customized after creation, skip
+        info "Skipped: $dest_name (optional, already deployed)"
+      fi
+    else
+      # User-created file (no managed marker)
+      if $is_required; then
+        if [[ "${INTERACTIVE:-false}" == "true" ]]; then
+          read -rp "$dest_name exists (user-customized). Overwrite? [y/N] " ans
+          if [[ "${ans,,}" == "y" ]]; then
+            cp "$src" "$dest"
+            info "Overwritten: $dest_name"
+          else
+            info "Skipped: $dest_name (user choice)"
+          fi
+        else
+          info "Skipped: $dest_name (user-customized, non-interactive)"
+        fi
+      else
+        info "Skipped: $dest_name (user-customized, optional)"
       fi
     fi
   done
