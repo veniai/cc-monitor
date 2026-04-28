@@ -256,8 +256,14 @@ setup_openclaw_subagent() {
   local agent_name="$1"
   info "创建龙虾子 Agent: $agent_name"
 
+  local workspace
+  workspace=$(openclaw agents list 2>/dev/null | grep -A5 "main" | grep -oP 'Workspace:\s*\K.*' | head -1)
+  workspace="${workspace:-$HOME/.openclaw/workspace}"
+
   if openclaw agents list 2>/dev/null | grep -q "$agent_name"; then
     info "子 Agent '$agent_name' 已存在，跳过创建"
+    generate_workspace_manifest "$workspace" "$agent_name"
+    render_workspace_templates "$workspace"
     return 0
   fi
 
@@ -267,7 +273,6 @@ setup_openclaw_subagent() {
     read -rp "  Agent model（如 zai/glm-5-turbo）: " model
   fi
 
-  local workspace="$HOME/.openclaw/workspace"
   openclaw agents add "$agent_name" \
     ${model:+--model "$model"} \
     --workspace "$workspace" \
@@ -286,6 +291,99 @@ setup_openclaw_subagent() {
   else
     warn "子 Agent 创建失败，可手动运行: openclaw agents add $agent_name"
   fi
+
+  generate_workspace_manifest "$workspace" "$agent_name"
+  render_workspace_templates "$workspace"
+}
+
+# Generate cc-monitor.workspace.json manifest in workspace root
+generate_workspace_manifest() {
+  local workspace="$1"
+  local agent_name="$2"
+
+  mkdir -p "$workspace"
+
+  local channel_id
+  channel_id=$(config_get_from_file "$CONFIG_DIR/config.conf" "channel:wechat:openclaw_channel" "openclaw-weixin")
+
+  jq -n \
+    --arg version 1 \
+    --arg ccMonitorDir "$SCRIPT_DIR" \
+    --arg configPath "$CONFIG_DIR/config.conf" \
+    --arg markerDir "$(config_get_from_file "$CONFIG_DIR/config.conf" "monitor:marker_dir" "/tmp/cc-monitor")" \
+    --arg channelId "$channel_id" \
+    --arg agentName "$agent_name" \
+    '{
+      version: $version | tonumber,
+      ccMonitorDir: $ccMonitorDir,
+      configPath: $configPath,
+      markerDir: $markerDir,
+      channelId: $channelId,
+      agentName: $agentName
+    }' > "$workspace/cc-monitor.workspace.json"
+
+  info "Manifest generated: $workspace/cc-monitor.workspace.json"
+}
+
+# Deploy template files to workspace with conflict detection
+render_workspace_templates() {
+  local workspace="$1"
+  local templates_dir="$SCRIPT_DIR/templates"
+
+  if [[ ! -d "$templates_dir" ]]; then
+    warn "Templates directory not found: $templates_dir"
+    return 1
+  fi
+
+  mkdir -p "$workspace"
+
+  # file priority: required (overwrite managed) vs optional (only if absent)
+  local required_files=("agents.md" "tools.md" "soul.md")
+  local optional_files=("identity.md" "user.md")
+
+  for file in "${required_files[@]}" "${optional_files[@]}"; do
+    local src="$templates_dir/$file"
+    local dest="$workspace/$file"
+
+    [[ ! -f "$src" ]] && continue
+
+    local is_required=false
+    for req in "${required_files[@]}"; do
+      [[ "$file" == "$req" ]] && is_required=true && break
+    done
+
+    if [[ ! -f "$dest" ]]; then
+      cp "$src" "$dest"
+      info "Created: $file"
+      continue
+    fi
+
+    # File exists — check if it's ours (managed marker)
+    if grep -q 'cc-monitor-managed:' "$dest" 2>/dev/null; then
+      # Managed file — safe to update
+      if ! diff -q "$src" "$dest" &>/dev/null; then
+        cp "$src" "$dest"
+        info "Updated: $file (template newer)"
+      fi
+    else
+      # User-created file
+      if $is_required; then
+        if [[ "${INTERACTIVE:-false}" == "true" ]]; then
+          read -rp "$file exists (user-customized). Overwrite? [y/N] " ans
+          if [[ "${ans,,}" == "y" ]]; then
+            cp "$src" "$dest"
+            info "Overwritten: $file"
+          else
+            info "Skipped: $file (user choice)"
+          fi
+        else
+          info "Skipped: $file (user-customized, non-interactive)"
+        fi
+      else
+        info "Skipped: $file (user-customized, optional)"
+      fi
+    fi
+  done
 }
 
 config_get_from_file() {
@@ -505,7 +603,7 @@ main() {
     if [[ "$mode" == "direct" ]]; then
       prompt_direct_config
     else
-      prompt_openclaw_config
+      INTERACTIVE=true prompt_openclaw_config
     fi
 
     read -rp "启用 watchdog 定时检查（每5分钟）? [Y/n] " ans

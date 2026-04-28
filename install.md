@@ -68,6 +68,26 @@ chmod 0600 ~/.config/cc-monitor/config.conf
 3. 创建子 Agent（推荐）：`openclaw agents add cc-monitor --bind weixin`
 4. 绑定路由：`openclaw agents bind cc-monitor --bind weixin`
 
+### 6b. 龙虾模式：生成工作区模板
+
+在 OpenClaw workspace 目录中生成配置文件，让子 agent 知道如何操作：
+
+```bash
+# 生成 manifest（包含 cc-monitor 路径、配置路径等）
+# 此步骤由 install.sh 自动完成
+```
+
+生成以下文件到 workspace 目录（默认 `~/.openclaw/workspace/`）：
+
+- `cc-monitor.workspace.json` — 机器可读的路径和配置入口（每次安装重新生成）
+- `AGENTS.md` — 消息代理指令（消息分流、session 扫描、禁止行为）
+- `TOOLS.md` — 工具箱（tmux 规范、marker 写法、hook 监控说明）
+- `SOUL.md` — 行为准则（转发忠实性、禁止即兴发挥）
+- `IDENTITY.md` — 角色定义（仅首次创建，不覆盖用户已有）
+- `USER.md` — 用户信息模板（仅首次创建，不覆盖用户已有）
+
+每个文件顶部有 `<!-- cc-monitor-managed -->` 标记。安装器据此区分 cc-monitor 管理的文件和用户自定义内容。
+
 ### 7. 验证
 
 手动触发一次测试：

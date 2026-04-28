@@ -191,8 +191,8 @@ handle_codex_stop() {
 
   session=$(find_tmux_session) || { printf '%s\n' '{}'; return 0; }
   pane_cmd=$(tmux list-panes -t "$TMUX_PANE" -F '#{pane_current_command}' 2>/dev/null)
-  # Skip if running inside Claude Code (not a Codex session)
-  [[ "$pane_cmd" == "claude" ]] || { printf '%s\n' '{}'; return 0; }
+  # Skip if running inside Claude Code (not a standalone Codex session)
+  [[ "$pane_cmd" == "claude" ]] && { printf '%s\n' '{}'; return 0; }
 
   msg=$(printf '%s' "$input" | jq -r '.last_assistant_message // empty')
   [[ -z "$msg" ]] && msg="(Codex 任务完成，无输出摘要)"
