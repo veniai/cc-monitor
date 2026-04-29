@@ -214,16 +214,23 @@ handle_permission_request() {
 
 # Handle AskUserQuestion: approve immediately, then manage response via background process
 handle_ask_user_question() {
-  local detail msg short
-  detail=$(get_tool_detail "$HOOK_TOOL_NAME" "$HOOK_TOOL_INPUT")
-  printf -v msg '**[Monitor]** %s 提问' "$TMUX_SESSION"
-  [[ -n "$detail" ]] && printf -v msg '%s\n%s' "$msg" "$detail"
-
-  local timeout_secs
+  local timeout_secs msg short
   timeout_secs=$(config_get "monitor:auto_answer_timeout" "300")
-  printf -v msg '%s\n%s' "$msg" "回复「回复 X 选N」或直接发选项编号，${timeout_secs}秒未处理将自动回复"
-  short="${TMUX_SESSION} ❓ 提问"
-  [[ -n "$detail" ]] && short="${short} $(truncate_str "$detail" 80)"
+
+  # Build structured notification: question + numbered options
+  local question options_block
+  question=$(printf '%s' "$HOOK_TOOL_INPUT" | jq -r '.questions[0].question // empty' 2>/dev/null)
+  options_block=$(printf '%s' "$HOOK_TOOL_INPUT" | jq -r '
+    .questions[0].options // [] | to_entries[] |
+    " \(.key + 1). \(.value.label)" +
+    (if (.value.description // "") != "" then " — \(.value.description)" else "" end)
+  ' 2>/dev/null)
+
+  printf -v msg '**[Monitor]** %s 提问:\n\n%s' "$TMUX_SESSION" "$(truncate_str "$question" 300)"
+  [[ -n "$options_block" ]] && printf -v msg '%s\n%s' "$msg" "$options_block"
+  printf -v msg '%s\n\n%s' "$msg" "回复选项编号（如「选1」），${timeout_secs}秒未处理将自动回复"
+
+  short="${TMUX_SESSION} ❓ $(truncate_str "$question" 60)"
   notify_user "$msg" "$short"
 
   # Write pending question to marker
