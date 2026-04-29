@@ -38,28 +38,53 @@ Process messages top-to-bottom, first match wins:
 
 ### 2. Reply quoting `[Monitor]` notification
 - Extract session name from quoted `[Monitor] {session}` text
-- Write marker, relay reply text to that session
-- Don't change active session
+- Check if the session has a `pending_question` in its marker file:
+  ```bash
+  jq -r '.pending_question // empty' {markerDir}/{session}.json
+  ```
+- **If pending_question exists** (user is replying to an AskUserQuestion):
+  - Extract the user's choice from the reply (e.g. "选3" → "3", "用方案二" → option 2's label)
+  - Write the extracted response to the marker:
+    ```bash
+    jq '.pending_question.response = "extracted choice"' {markerDir}/{session}.json > tmp && mv tmp {markerDir}/{session}.json
+    ```
+  - The background handler will relay it to tmux automatically
+  - Reply `NO_REPLY`
+- **If no pending_question** (normal reply):
+  - Write marker, relay reply text to that session
+  - Don't change active session
+  - Reply `NO_REPLY`
+
+### 3. Reply to permission request
+- Extract session name from quoted `[Monitor] {session}` text
+- If user says "批准" or "approve": write decision to marker:
+  ```bash
+  jq '.pending_permission.decision = "approve"' {markerDir}/{session}.json > tmp && mv tmp {markerDir}/{session}.json
+  ```
+- If user says "拒绝" or "deny": write decision to marker:
+  ```bash
+  jq '.pending_permission.decision = "deny"' {markerDir}/{session}.json > tmp && mv tmp {markerDir}/{session}.json
+  ```
 - Reply `NO_REPLY`
 
-### 3. `切到 X`
+### 4. `切到 X`
 - Set active session to X
 - Scan last 5 non-empty lines of X
 - Reply with session status
 
-### 4. `发送 XXX`
+### 5. `发送 XXX`
 - Requires active session set first
 - Write marker, relay text verbatim
 - Reply `NO_REPLY`
 
-### 5. `看下 X`
+### 6. `看下 X`
 - Capture last 40 lines of session X
 - Send raw output to user
 
-### 6. `扫描` / `状态`
+### 7. `扫描` / `状态`
 - Re-run startup scan
 
-### 7. Anything else
+### 8. Anything else
 - Respond normally as yourself
 
 ## Marker Contract

@@ -53,7 +53,8 @@ After you relay a message, cc-monitor's hooks take over automatically:
 |-------|--------------|
 | Task completes | Sends completion summary to user, cleans up marker |
 | API error | Auto-retries with exponential backoff (up to 5x) |
-| Permission request | Safe tools auto-approved; others notify user then auto-approve after timeout |
+| Permission request | Safe tools auto-approved; others: notify user, poll marker for decision, auto-approve on timeout |
+| AskUserQuestion | Approves immediately, notifies user with question, polls marker for response, ESC+default on timeout |
 | Quota exceeded | Detects reset time, suppresses retry until quota resets |
 | Session ends | Cleans up marker file |
 | Session stuck | Watchdog (cron) detects frozen sessions and recovers them |

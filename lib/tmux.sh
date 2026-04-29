@@ -26,6 +26,21 @@ recover_session() {
   tmux send-keys -t "$target" Enter 2>/dev/null || true
 }
 
+# Answer an AskUserQuestion prompt in the terminal
+# Usage: answer_question <pane> <response_text>
+answer_question() {
+  local pane="${1:?pane required}"
+  local text="${2:?response text required}"
+  # Dismiss the question UI
+  tmux send-keys -t "$pane" Escape 2>/dev/null || true
+  sleep 0.5
+  # Paste response as a new user message
+  tmux set-buffer "$text" 2>/dev/null || true
+  tmux paste-buffer -t "$pane" 2>/dev/null || true
+  sleep 0.3
+  tmux send-keys -t "$pane" Enter 2>/dev/null || true
+}
+
 # Capture visible screen content of a pane (no scrollback)
 capture_pane() {
   local pane_id="${1:?pane_id required}"

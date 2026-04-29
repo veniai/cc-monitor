@@ -154,6 +154,12 @@ handle_permission_request() {
     return 0
   fi
 
+  # AskUserQuestion: approve immediately, handle response in background
+  if [[ "$HOOK_TOOL_NAME" == "AskUserQuestion" ]]; then
+    handle_ask_user_question
+    return $?
+  fi
+
   local detail msg short
   detail=$(get_tool_detail "$HOOK_TOOL_NAME" "$HOOK_TOOL_INPUT")
   printf -v msg '**[Monitor]** %s 请求执行 %s' "$TMUX_SESSION" "$HOOK_TOOL_NAME"
@@ -165,12 +171,38 @@ handle_permission_request() {
   if [[ "$auto_approve" == "true" ]]; then
     local timeout_secs
     timeout_secs=$(config_get "monitor:auto_approve_timeout" "300")
-    printf -v msg '%s\n%s' "$msg" "${timeout_secs}秒内未处理将自动批准"
+    printf -v msg '%s\n%s' "$msg" "回复「批准」或「拒绝」，${timeout_secs}秒内未处理将自动批准"
     short="${TMUX_SESSION} ⚠ 权限: ${HOOK_TOOL_NAME}"
     [[ -n "$detail" ]] && short="${short} $(truncate_str "$detail" 50)"
     notify_user "$msg" "$short"
-    sleep "$timeout_secs"
-    printf '%s\n' '{"decision":"approve"}'
+
+    # Write pending permission to marker for bidirectional IPC
+    local now
+    now=$(date +%s)
+    marker_update "$TMUX_SESSION" ".pending_permission = {
+      tool: \"$HOOK_TOOL_NAME\",
+      created_at: $now,
+      decision: null
+    }"
+
+    # Poll marker for user decision instead of blind sleep
+    local elapsed=0 decision=""
+    while (( elapsed < timeout_secs )); do
+      sleep 5
+      decision=$(marker_read "$TMUX_SESSION" "pending_permission.decision")
+      if [[ -n "$decision" && "$decision" != "null" && "$decision" != "" ]]; then
+        break
+      fi
+      elapsed=$((elapsed + 5))
+    done
+
+    marker_update "$TMUX_SESSION" "del(.pending_permission)"
+
+    if [[ "$decision" == "deny" ]]; then
+      printf '%s\n' '{"decision":"deny"}'
+    else
+      printf '%s\n' '{"decision":"approve"}'
+    fi
   else
     printf -v msg '%s\n%s' "$msg" "请手动处理此权限请求"
     short="${TMUX_SESSION} ⚠ 权限: ${HOOK_TOOL_NAME}"
@@ -178,6 +210,63 @@ handle_permission_request() {
     notify_user "$msg" "$short"
     printf '%s\n' '{"decision":"deny"}'
   fi
+}
+
+# Handle AskUserQuestion: approve immediately, then manage response via background process
+handle_ask_user_question() {
+  local detail msg short
+  detail=$(get_tool_detail "$HOOK_TOOL_NAME" "$HOOK_TOOL_INPUT")
+  printf -v msg '**[Monitor]** %s 提问' "$TMUX_SESSION"
+  [[ -n "$detail" ]] && printf -v msg '%s\n%s' "$msg" "$detail"
+
+  local timeout_secs
+  timeout_secs=$(config_get "monitor:auto_answer_timeout" "300")
+  printf -v msg '%s\n%s' "$msg" "回复「回复 X 选N」或直接发选项编号，${timeout_secs}秒未处理将自动回复"
+  short="${TMUX_SESSION} ❓ 提问"
+  [[ -n "$detail" ]] && short="${short} $(truncate_str "$detail" 80)"
+  notify_user "$msg" "$short"
+
+  # Write pending question to marker
+  local now question options_json
+  now=$(date +%s)
+  question=$(printf '%s' "$HOOK_TOOL_INPUT" | jq -r '.questions[0].question // empty' 2>/dev/null)
+  options_json=$(printf '%s' "$HOOK_TOOL_INPUT" | jq -c '.questions[0].options[]? | .label' 2>/dev/null)
+  marker_update "$TMUX_SESSION" ".pending_question = {
+    question: $(printf '%s' "$question" | jq -Rs .),
+    options: $options_json,
+    created_at: $now,
+    response: null
+  }"
+
+  # Start background process to handle response or timeout
+  (
+    local session="$TMUX_SESSION"
+    local pane="$TMUX_PANE"
+    local marker_dir="${MARKER_DIR:-/tmp/cc-monitor}"
+    local elapsed=0 response=""
+
+    # Poll for user response
+    while (( elapsed < timeout_secs )); do
+      sleep 5
+      response=$(jq -r '.pending_question.response // ""' "${marker_dir}/${session}.json" 2>/dev/null)
+      if [[ -n "$response" && "$response" != "null" && "$response" != "" ]]; then
+        # User responded via IM - relay to tmux
+        answer_question "$pane" "$response"
+        jq "del(.pending_question)" "${marker_dir}/${session}.json" > "${marker_dir}/${session}.json.tmp" 2>/dev/null \
+          && mv "${marker_dir}/${session}.json.tmp" "${marker_dir}/${session}.json"
+        exit 0
+      fi
+      elapsed=$((elapsed + 5))
+    done
+
+    # Timeout: ESC + default response
+    answer_question "$pane" "根据上下文选择最合适的方案"
+    jq "del(.pending_question)" "${marker_dir}/${session}.json" > "${marker_dir}/${session}.json.tmp" 2>/dev/null \
+      && mv "${marker_dir}/${session}.json.tmp" "${marker_dir}/${session}.json"
+  ) & disown
+
+  # Approve immediately so the question appears in the terminal
+  printf '%s\n' '{"decision":"approve"}'
 }
 
 handle_session_end() {
