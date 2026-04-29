@@ -245,24 +245,19 @@ handle_ask_user_question() {
     response: null
   }"
 
-  # Start background process: dismiss UI, then wait for IM response or timeout
+  # Start background process: wait for IM response or timeout
   (
     local session="$TMUX_SESSION"
     local pane="$TMUX_PANE"
     local marker_dir="${MARKER_DIR:-/tmp/cc-monitor}"
     local elapsed=0 response=""
 
-    # Dismiss AskUserQuestion UI immediately — don't let user interact with it
-    sleep 2
-    tmux send-keys -t "$pane" Escape 2>/dev/null || true
-    sleep 0.5
-
     # Poll for IM response
     while (( elapsed < timeout_secs )); do
       sleep 5
       response=$(jq -r '.pending_question.response // ""' "${marker_dir}/${session}.json" 2>/dev/null)
       if [[ -n "$response" && "$response" != "null" && "$response" != "" ]]; then
-        # User responded via IM - paste response
+        # User responded via IM — type into AskUserQuestion text input
         tmux set-buffer "$response" 2>/dev/null || true
         tmux paste-buffer -t "$pane" 2>/dev/null || true
         sleep 0.3
@@ -274,7 +269,7 @@ handle_ask_user_question() {
       elapsed=$((elapsed + 5))
     done
 
-    # Timeout: paste default response
+    # Timeout: type default response into AskUserQuestion text input
     tmux set-buffer "根据上下文选择最合适的方案" 2>/dev/null || true
     tmux paste-buffer -t "$pane" 2>/dev/null || true
     sleep 0.3
