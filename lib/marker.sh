@@ -24,13 +24,15 @@ marker_create() {
     "$target" "$now" "$extra" > "$file"
 }
 
-# Atomic update: apply jq filter to marker
+# Atomic update: apply jq filter to marker (uses unique tmp to avoid concurrent write collision)
 marker_update() {
   local session="${1:?session name required}"
   local filter="${2:?jq filter required}"
   local file
   file=$(marker_path "$session")
-  jq "$filter" "$file" > "${file}.tmp" 2>/dev/null && mv "${file}.tmp" "$file"
+  local tmp
+  tmp="$(mktemp "${file}.XXXXXX")"
+  jq "$filter" "$file" > "$tmp" 2>/dev/null && mv "$tmp" "$file" || rm -f "$tmp"
 }
 
 # Read a field from marker

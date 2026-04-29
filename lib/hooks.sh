@@ -250,22 +250,21 @@ handle_ask_user_question() {
     local session="$TMUX_SESSION"
     local pane="$TMUX_PANE"
     local marker_dir="${MARKER_DIR:-/tmp/cc-monitor}"
+    local marker_file="${marker_dir}/${session}.json"
     local elapsed=0 response=""
 
     # Poll for IM response
     while (( elapsed < timeout_secs )); do
       sleep 5
-      response=$(jq -r '.pending_question.response // ""' "${marker_dir}/${session}.json" 2>/dev/null)
+      response=$(jq -r '.pending_question.response // ""' "$marker_file" 2>/dev/null)
       if [[ -n "$response" && "$response" != "null" && "$response" != "" ]]; then
         # User responded via IM — send option number or text
         if [[ "$response" =~ ^[1-9]$ ]]; then
-          # Number: select option directly (tested: send-keys "N" selects option N)
           tmux send-keys -t "$pane" "$response" 2>/dev/null || true
         else
-          # Custom text: select "Type something" (last numbered option before Chat),
-          # then paste text. The option number = count of real options + 1.
+          # Custom text: select "Type something" then paste
           local opt_count
-          opt_count=$(jq '.pending_question.options | length' "${marker_dir}/${session}.json" 2>/dev/null || echo 1)
+          opt_count=$(jq '.pending_question.options | length' "$marker_file" 2>/dev/null || echo 1)
           tmux send-keys -t "$pane" "$((opt_count + 1))" 2>/dev/null || true
           sleep 1
           tmux set-buffer "$response" 2>/dev/null || true
@@ -273,17 +272,24 @@ handle_ask_user_question() {
           sleep 0.3
           tmux send-keys -t "$pane" Enter 2>/dev/null || true
         fi
-        jq "del(.pending_question)" "${marker_dir}/${session}.json" > "${marker_dir}/${session}.json.tmp" 2>/dev/null \
-          && mv "${marker_dir}/${session}.json.tmp" "${marker_dir}/${session}.json"
+        local tmp; tmp="$(mktemp "${marker_file}.XXXXXX")"
+        jq "del(.pending_question)" "$marker_file" > "$tmp" 2>/dev/null && mv "$tmp" "$marker_file" || rm -f "$tmp"
         exit 0
       fi
       elapsed=$((elapsed + 5))
     done
 
-    # Timeout: select first option as default
-    tmux send-keys -t "$pane" "1" 2>/dev/null || true
-    jq "del(.pending_question)" "${marker_dir}/${session}.json" > "${marker_dir}/${session}.json.tmp" 2>/dev/null \
-      && mv "${marker_dir}/${session}.json.tmp" "${marker_dir}/${session}.json"
+    # Timeout: select "Type something" and paste default response
+    local opt_count
+    opt_count=$(jq '.pending_question.options | length' "$marker_file" 2>/dev/null || echo 1)
+    tmux send-keys -t "$pane" "$((opt_count + 1))" 2>/dev/null || true
+    sleep 1
+    tmux set-buffer "根据上下文选择最合适的方案" 2>/dev/null || true
+    tmux paste-buffer -t "$pane" 2>/dev/null || true
+    sleep 0.3
+    tmux send-keys -t "$pane" Enter 2>/dev/null || true
+    local tmp; tmp="$(mktemp "${marker_file}.XXXXXX")"
+    jq "del(.pending_question)" "$marker_file" > "$tmp" 2>/dev/null && mv "$tmp" "$marker_file" || rm -f "$tmp"
   ) & disown
 
   # Approve immediately so the question appears in the terminal
