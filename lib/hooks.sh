@@ -186,10 +186,11 @@ handle_session_end() {
 
 # Codex CLI stop handler — Codex expects valid JSON on stdout
 handle_codex_stop() {
-  local input msg session pane_cmd
+  local input msg pane_cmd
   input=$(cat)
 
-  session=$(find_tmux_session) || { printf '%s\n' '{}'; return 0; }
+  TMUX_SESSION=$(find_tmux_session) || { printf '%s\n' '{}'; return 0; }
+  export TMUX_SESSION
   pane_cmd=$(tmux list-panes -t "$TMUX_PANE" -F '#{pane_current_command}' 2>/dev/null)
   # Skip if running inside Claude Code (not a standalone Codex session)
   [[ "$pane_cmd" == "claude" ]] && { printf '%s\n' '{}'; return 0; }
@@ -197,8 +198,8 @@ handle_codex_stop() {
   msg=$(printf '%s' "$input" | jq -r '.last_assistant_message // empty')
   [[ -z "$msg" ]] && msg="(Codex 任务完成，无输出摘要)"
   notify_user \
-    "**[Codex Monitor]** ${session} 任务完成:\n\n$(truncate_str "$msg" 5000)" \
-    "${session} ✓ Codex完成"
+    "**[Codex Monitor]** ${TMUX_SESSION} 任务完成:\n\n$(truncate_str "$msg" 5000)" \
+    "${TMUX_SESSION} ✓ Codex完成"
 
   printf '%s\n' '{}'
 }
