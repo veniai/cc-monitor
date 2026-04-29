@@ -16,7 +16,7 @@ channel_send() {
 
   local _i
   for _i in 1 2 3; do
-    openclaw message send \
+    http_proxy= https_proxy= openclaw message send \
       --channel "$channel" \
       --account "$account" \
       --target "$target" \
