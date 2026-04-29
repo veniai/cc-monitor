@@ -245,20 +245,28 @@ handle_ask_user_question() {
     response: null
   }"
 
-  # Start background process to handle response or timeout
+  # Start background process: dismiss UI, then wait for IM response or timeout
   (
     local session="$TMUX_SESSION"
     local pane="$TMUX_PANE"
     local marker_dir="${MARKER_DIR:-/tmp/cc-monitor}"
     local elapsed=0 response=""
 
-    # Poll for user response
+    # Dismiss AskUserQuestion UI immediately — don't let user interact with it
+    sleep 2
+    tmux send-keys -t "$pane" Escape 2>/dev/null || true
+    sleep 0.5
+
+    # Poll for IM response
     while (( elapsed < timeout_secs )); do
       sleep 5
       response=$(jq -r '.pending_question.response // ""' "${marker_dir}/${session}.json" 2>/dev/null)
       if [[ -n "$response" && "$response" != "null" && "$response" != "" ]]; then
-        # User responded via IM - relay to tmux
-        answer_question "$pane" "$response"
+        # User responded via IM - paste response
+        tmux set-buffer "$response" 2>/dev/null || true
+        tmux paste-buffer -t "$pane" 2>/dev/null || true
+        sleep 0.3
+        tmux send-keys -t "$pane" Enter 2>/dev/null || true
         jq "del(.pending_question)" "${marker_dir}/${session}.json" > "${marker_dir}/${session}.json.tmp" 2>/dev/null \
           && mv "${marker_dir}/${session}.json.tmp" "${marker_dir}/${session}.json"
         exit 0
@@ -266,8 +274,11 @@ handle_ask_user_question() {
       elapsed=$((elapsed + 5))
     done
 
-    # Timeout: ESC + default response
-    answer_question "$pane" "根据上下文选择最合适的方案"
+    # Timeout: paste default response
+    tmux set-buffer "根据上下文选择最合适的方案" 2>/dev/null || true
+    tmux paste-buffer -t "$pane" 2>/dev/null || true
+    sleep 0.3
+    tmux send-keys -t "$pane" Enter 2>/dev/null || true
     jq "del(.pending_question)" "${marker_dir}/${session}.json" > "${marker_dir}/${session}.json.tmp" 2>/dev/null \
       && mv "${marker_dir}/${session}.json.tmp" "${marker_dir}/${session}.json"
   ) & disown
