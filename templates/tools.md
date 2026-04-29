@@ -8,10 +8,10 @@ Read `cc-monitor.workspace.json` in your workspace root. It contains:
 - `ccMonitorDir` — where cc-monitor is installed
 - `configPath` — cc-monitor config file path
 - `markerDir` — where marker files are stored
-- `channelId` — the OpenClaw channel (e.g. `openclaw-weixin`)
+- `channelId` — the OpenClaw channel (e.g. `openclaw-weixin` for WeChat, `feishu` for Feishu)
 - `agentName` — your agent name in OpenClaw
 
-For channel-specific values (target, account), read the config file at `configPath`. The relevant sections are `[channel:wechat]` or `[channel:feishu-openclaw]`.
+For channel-specific values (target, account), read the config file at `configPath`. Check whichever section is enabled: `[channel:wechat]` (WeChat) or `[channel:feishu-openclaw]` (Feishu).
 
 ## tmux Rules
 

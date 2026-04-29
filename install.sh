@@ -188,45 +188,69 @@ prompt_openclaw_config() {
   fi
 
   # detect wechat login
-  local has_account=false
+  local has_wechat=false has_feishu=false
   if openclaw channels list 2>/dev/null | grep -q "openclaw-weixin"; then
-    has_account=true
+    has_wechat=true
     info "检测到已配置的微信通道"
   fi
+  if openclaw channels list 2>/dev/null | grep -q "feishu"; then
+    has_feishu=true
+    info "检测到已配置的飞书通道"
+  fi
 
-  if ! $has_account; then
-    echo ""
-    printf "${YELLOW}需要登录微信${NC}\n"
-    read -rp "现在扫码登录微信? [Y/n] " ans
+  # --- WeChat setup ---
+  if $has_wechat; then
+    read -rp "启用微信通知? [Y/n] " ans
     if [[ "${ans,,}" != "n" ]]; then
-      openclaw-weixin login 2>/dev/null || openclaw channels login --channel weixin 2>/dev/null || {
-        warn "自动登录失败，请手动运行: openclaw channels login --channel weixin"
-      }
+      local wechat_account wechat_target
+      wechat_account=$(openclaw channels list 2>/dev/null | grep "openclaw-weixin" | awk '{print $2}' | cut -d: -f1)
+      if [[ -n "$wechat_account" ]]; then
+        info "微信账号: $wechat_account"
+        set_config_value "$conf" "enabled" "true" "channel:wechat"
+        set_config_value "$conf" "openclaw_channel" "openclaw-weixin" "channel:wechat"
+        set_config_value "$conf" "openclaw_account" "$wechat_account" "channel:wechat"
+        read -rp "  微信通知目标（如: o9cq805o4jn67kXBf0Sh7Qz0J2Wg@im.wechat）: " wechat_target
+        set_config_value "$conf" "openclaw_target" "$wechat_target" "channel:wechat"
+      fi
+    fi
+  else
+    read -rp "配置微信通道? [y/N] " ans
+    if [[ "${ans,,}" == "y" ]]; then
+      echo ""
+      printf "${YELLOW}需要登录微信${NC}\n"
+      if openclaw channels login --channel weixin 2>/dev/null; then
+        info "微信登录成功，请重新运行 install.sh --interactive 以配置微信通知"
+      else
+        warn "登录失败，请手动运行: openclaw channels login --channel weixin"
+      fi
     fi
   fi
 
-  # read openclaw config
-  local wechat_account wechat_target
-  wechat_account=$(openclaw channels list 2>/dev/null | grep "openclaw-weixin" | awk '{print $2}' | cut -d: -f1)
-  if [[ -n "$wechat_account" ]]; then
-    info "微信账号: $wechat_account"
-    set_config_value "$conf" "enabled" "true" "channel:wechat"
-    set_config_value "$conf" "openclaw_account" "$wechat_account" "channel:wechat"
-    read -rp "  微信通知目标（如: o9cq805o4jn67kXBf0Sh7Qz0J2Wg@im.wechat）: " wechat_target
-    set_config_value "$conf" "openclaw_target" "$wechat_target" "channel:wechat"
-  fi
-
-  # feishu via openclaw (optional)
-  read -rp "也通过龙虾发飞书? [y/N] " ans
-  if [[ "${ans,,}" == "y" ]]; then
-    set_config_value "$conf" "enabled" "true" "channel:feishu-openclaw"
-    local feishu_account feishu_target
-    feishu_account=$(openclaw channels list 2>/dev/null | grep "openclaw-feishu" | awk '{print $2}' | cut -d: -f1)
-    read -rp "  飞书 openclaw account（回车使用自动检测: $feishu_account）: " input
-    [[ -n "$input" ]] && feishu_account="$input"
-    set_config_value "$conf" "openclaw_account" "$feishu_account" "channel:feishu-openclaw"
-    read -rp "  飞书通知目标: " feishu_target
-    set_config_value "$conf" "openclaw_target" "$feishu_target" "channel:feishu-openclaw"
+  # --- Feishu setup ---
+  if $has_feishu; then
+    read -rp "启用飞书通知? [Y/n] " ans
+    if [[ "${ans,,}" != "n" ]]; then
+      set_config_value "$conf" "enabled" "true" "channel:feishu-openclaw"
+      local feishu_account feishu_target
+      # Auto-detect feishu accounts from openclaw config
+      feishu_account=$(openclaw channels list 2>/dev/null | grep "feishu" | awk '{print $2}' | cut -d: -f1 | head -1)
+      read -rp "  飞书 account（回车使用自动检测: $feishu_account）: " input
+      [[ -n "$input" ]] && feishu_account="$input"
+      set_config_value "$conf" "openclaw_account" "$feishu_account" "channel:feishu-openclaw"
+      set_config_value "$conf" "openclaw_channel" "feishu" "channel:feishu-openclaw"
+      read -rp "  飞书通知目标（如: user:ou_xxx）: " feishu_target
+      set_config_value "$conf" "openclaw_target" "$feishu_target" "channel:feishu-openclaw"
+    fi
+  else
+    read -rp "配置飞书通道? [y/N] " ans
+    if [[ "${ans,,}" == "y" ]]; then
+      set_config_value "$conf" "enabled" "true" "channel:feishu-openclaw"
+      set_config_value "$conf" "openclaw_channel" "feishu" "channel:feishu-openclaw"
+      read -rp "  飞书 account: " feishu_account
+      set_config_value "$conf" "openclaw_account" "$feishu_account" "channel:feishu-openclaw"
+      read -rp "  飞书通知目标（如: user:ou_xxx）: " feishu_target
+      set_config_value "$conf" "openclaw_target" "$feishu_target" "channel:feishu-openclaw"
+    fi
   fi
 
   # dingtalk (always webhook)
@@ -261,8 +285,30 @@ setup_openclaw_subagent() {
   info "创建龙虾子 Agent: $agent_name"
 
   local workspace
-  workspace=$(openclaw agents list 2>/dev/null | grep -A5 "main" | grep -oP 'Workspace:\s*\K.*' | head -1)
-  workspace="${workspace:-$HOME/.openclaw/workspace}"
+  # Smart workspace detection: count agents, decide where to deploy
+  local agent_count
+  agent_count=$(openclaw agents list 2>/dev/null | grep -c "^- " || echo "0")
+
+  if (( agent_count <= 1 )); then
+    # Single agent or no agents — use main workspace
+    workspace=$(openclaw agents list 2>/dev/null | grep -A5 "main" | grep -oP 'Workspace:\s*\K.*' | head -1)
+    workspace="${workspace:-$HOME/.openclaw/workspace}"
+    info "单 Agent 环境，部署到: $workspace"
+  else
+    # Multiple agents — list them and ask
+    echo ""
+    printf "${BOLD}检测到 %d 个 Agent，选择 cc-monitor 代理部署到哪个 workspace:${NC}\n" "$agent_count"
+    openclaw agents list 2>/dev/null | grep -E "^- |Workspace:" | paste - - | while read -r line; do
+      echo "  $line"
+    done
+    echo ""
+    read -rp "输入 workspace 路径（如 ~/.openclaw/workspace-dev）: " workspace
+    workspace="${workspace/#\~/$HOME}"
+    if [[ ! -d "$workspace" ]]; then
+      warn "$workspace 不存在，使用默认路径"
+      workspace="$HOME/.openclaw/workspace"
+    fi
+  fi
 
   if openclaw agents list 2>/dev/null | grep -q "$agent_name"; then
     info "子 Agent '$agent_name' 已存在，跳过创建"
@@ -308,7 +354,17 @@ generate_workspace_manifest() {
   mkdir -p "$workspace"
 
   local channel_id
-  channel_id=$(config_get_from_file "$CONFIG_DIR/config.conf" "channel:wechat:openclaw_channel" "openclaw-weixin")
+  # Detect the actual enabled channel: prefer wechat, then feishu-openclaw
+  local wechat_enabled feishu_enabled
+  wechat_enabled=$(config_get_from_file "$CONFIG_DIR/config.conf" "channel:wechat:enabled" "false")
+  feishu_enabled=$(config_get_from_file "$CONFIG_DIR/config.conf" "channel:feishu-openclaw:enabled" "false")
+  if [[ "$wechat_enabled" == "true" ]]; then
+    channel_id=$(config_get_from_file "$CONFIG_DIR/config.conf" "channel:wechat:openclaw_channel" "openclaw-weixin")
+  elif [[ "$feishu_enabled" == "true" ]]; then
+    channel_id=$(config_get_from_file "$CONFIG_DIR/config.conf" "channel:feishu-openclaw:openclaw_channel" "feishu")
+  else
+    channel_id="openclaw-weixin"
+  fi
 
   jq -n \
     --arg version 1 \
