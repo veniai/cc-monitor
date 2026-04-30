@@ -222,7 +222,13 @@ handle_ask_user_question() {
         \" \(.key + 1). \(.value)\"
       " 2>/dev/null)
 
-      # Send notification for this question
+      # 1. Write pending_response FIRST (before notification, to avoid race)
+      local now
+      now=$(date +%s)
+      marker_update "$session" ".pending_response = {created_at: $now, response: null}"
+      echo "[$(date)] Q$((i+1)): pending_response written" >> "$_dbg"
+
+      # 2. Send notification for this question
       local q_num=$((i + 1)) msg short
       if (( count > 1 )); then
         printf -v msg '**[Monitor]** %s 提问 (%d/%d):\n\n%s' "$session" "$q_num" "$count" "$(truncate_str "$q_text" 300)"
@@ -236,37 +242,45 @@ handle_ask_user_question() {
       notify_user "$msg" "$short"
       echo "[$(date)] Q$((i+1)): notify_user done" >> "$_dbg"
 
-      # Write pending_response to marker
-      local now
-      now=$(date +%s)
-      marker_update "$session" ".pending_response = {created_at: $now, response: null}"
-      echo "[$(date)] Q$((i+1)): pending_response written" >> "$_dbg"
+      # 3. Immediately select "Type something" — cursor enters text input
+      #    This protects against bot forwarding to tmux: text goes into input, not ignored
+      local pane_snapshot type_key
+      sleep 2  # Wait for UI to fully render
+      pane_snapshot=$(tmux capture-pane -t "$pane" -p -S -20 2>/dev/null)
+      if echo "$pane_snapshot" | grep -q "Type something"; then
+        type_key=$(echo "$pane_snapshot" | grep -oP '\d+(?=\. Type something)' | tail -1)
+        [[ -z "$type_key" ]] && type_key=4
+        tmux send-keys -t "$pane" "$type_key" 2>/dev/null || true
+        sleep 1
+        echo "[$(date)] Q$((i+1)): selected Type something (key=$type_key)" >> "$_dbg"
+      else
+        echo "[$(date)] Q$((i+1)): UI already gone before Type something" >> "$_dbg"
+        marker_update "$session" "del(.pending_response)"
+        continue
+      fi
 
-      # Poll indefinitely for IM response; bail if UI disappears
+      # 4. Poll for IM response; if text arrives via tmux, it goes into the input field
       local response=""
       while true; do
         sleep 5
         response=$(jq -r '.pending_response.response // ""' "$marker_file" 2>/dev/null)
+        echo "[$(date)] Q$((i+1)): poll response='$response'" >> "$_dbg"
         if [[ -n "$response" && "$response" != "null" && "$response" != "" ]]; then
           echo "[$(date)] Q$((i+1)): got response='$response'" >> "$_dbg"
           break
         fi
-        # Check if AskUserQuestion UI is still visible
-        if ! tmux capture-pane -t "$pane" -p -S -20 2>/dev/null | grep -q "Type something"; then
-          echo "[$(date)] Q$((i+1)): UI gone, skipping" >> "$_dbg"
+        # Check if text input is still active
+        local pane_check
+        pane_check=$(tmux capture-pane -t "$pane" -p -S -20 2>/dev/null)
+        if ! echo "$pane_check" | grep -qE "Type something|Enter to select"; then
+          echo "[$(date)] Q$((i+1)): UI gone, pane content:" >> "$_dbg"
+          echo "$pane_check" | tail -10 >> "$_dbg"
           marker_update "$session" "del(.pending_response)"
           continue 2
         fi
       done
 
-      # Find "Type something" key
-      local pane_snapshot type_key
-      pane_snapshot=$(tmux capture-pane -t "$pane" -p -S -20 2>/dev/null)
-      type_key=$(echo "$pane_snapshot" | grep -oP '\d+(?=\. Type something)' | tail -1)
-      [[ -z "$type_key" ]] && type_key=4
-
-      tmux send-keys -t "$pane" "$type_key" 2>/dev/null || true
-      sleep 1
+      # 5. Paste response into text input and submit
       tmux set-buffer "$response" 2>/dev/null || true
       tmux paste-buffer -t "$pane" 2>/dev/null || true
       sleep 2
