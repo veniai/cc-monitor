@@ -1,4 +1,8 @@
 <p align="center">
+  <img src="docs/assets/cc-monitor-hero.png" alt="cc-monitor — Claude Code Remote Monitor" width="100%">
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License">
   <img src="https://img.shields.io/badge/Claude_Code-Monitor-blue.svg" alt="Claude Code">
   <img src="https://img.shields.io/badge/version-1.1.0-blue.svg" alt="Version">
