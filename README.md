@@ -138,10 +138,6 @@ mode=direct
 enabled=true
 webhook=https://oapi.dingtalk.com/robot/send?access_token=xxx
 secret=
-
-[channel:feishu]
-enabled=true
-webhook=https://open.feishu.cn/open-apis/bot/v2/hook/xxx
 ```
 
 **龙虾模式：**
@@ -179,7 +175,6 @@ cc-monitor.sh           # 唯一入口
 │   └── marker.sh       # 会话状态文件
 ├── channels/           # 通知渠道插件
 │   ├── dingtalk.sh     # 钉钉 webhook（强通知）
-│   ├── feishu.sh       # 飞书 webhook（直连模式）
 │   ├── feishu-openclaw.sh  # 飞书 openclaw（龙虾模式）
 │   ├── wechat.sh       # 微信 openclaw（龙虾模式）
 │   └── _template.sh    # 新渠道模板

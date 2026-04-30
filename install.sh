@@ -158,12 +158,6 @@ prompt_direct_config() {
     [[ -n "$secret" ]] && set_config_value "$conf" "secret" "$secret" "channel:dingtalk"
   fi
 
-  read -rp "启用飞书（IM通知）? [Y/n] " ans
-  if [[ "${ans,,}" != "n" ]]; then
-    set_config_value "$conf" "enabled" "true" "channel:feishu"
-    read -rp "  飞书 webhook URL: " webhook
-    set_config_value "$conf" "webhook" "$webhook" "channel:feishu"
-  fi
 }
 
 # ---------------------------------------------------------------------------

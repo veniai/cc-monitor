@@ -38,53 +38,40 @@ Process messages top-to-bottom, first match wins:
 
 ### 2. Reply quoting `[Monitor]` notification
 - Extract session name from quoted `[Monitor] {session}` text
-- Check if the session has a `pending_question` in its marker file:
+- Check if the session has a `pending_response` in its marker file:
   ```bash
-  jq -r '.pending_question // empty' {markerDir}/{session}.json
+  jq -r '.pending_response // empty' {markerDir}/{session}.json
   ```
-- **If pending_question exists** (user is replying to an AskUserQuestion):
-  - Extract the user's choice from the reply (e.g. "选3" → "3", "用方案二" → option 2's label)
-  - Write the extracted response to the marker:
+- **If pending_response exists** (user is replying to an AskUserQuestion):
+  - Write the user's raw reply text directly to the marker (must use mktemp to avoid concurrent write collision):
     ```bash
-    jq '.pending_question.response = "extracted choice"' {markerDir}/{session}.json > tmp && mv tmp {markerDir}/{session}.json
+    tmp="$(mktemp {markerDir}/{session}.json.XXXXXX)" && jq '.pending_response.response = "user raw text"' {markerDir}/{session}.json > "$tmp" && mv "$tmp" {markerDir}/{session}.json
     ```
-  - The background handler will relay it to tmux automatically
+  - The background handler will paste it into the AskUserQuestion text input automatically
   - Reply `NO_REPLY`
-- **If no pending_question** (normal reply):
+- **If no pending_response** (normal reply):
   - Write marker, relay reply text to that session
   - Don't change active session
   - Reply `NO_REPLY`
 
-### 3. Reply to permission request
-- Extract session name from quoted `[Monitor] {session}` text
-- If user says "批准" or "approve": write decision to marker:
-  ```bash
-  jq '.pending_permission.decision = "approve"' {markerDir}/{session}.json > tmp && mv tmp {markerDir}/{session}.json
-  ```
-- If user says "拒绝" or "deny": write decision to marker:
-  ```bash
-  jq '.pending_permission.decision = "deny"' {markerDir}/{session}.json > tmp && mv tmp {markerDir}/{session}.json
-  ```
-- Reply `NO_REPLY`
-
-### 4. `切到 X`
+### 3. `切到 X`
 - Set active session to X
 - Scan last 5 non-empty lines of X
 - Reply with session status
 
-### 5. `发送 XXX`
+### 4. `发送 XXX`
 - Requires active session set first
 - Write marker, relay text verbatim
 - Reply `NO_REPLY`
 
-### 6. `看下 X`
+### 5. `看下 X`
 - Capture last 40 lines of session X
 - Send raw output to user
 
-### 7. `扫描` / `状态`
+### 6. `扫描` / `状态`
 - Re-run startup scan
 
-### 8. Anything else
+### 7. Anything else
 - Respond normally as yourself
 
 ## Marker Contract
@@ -96,7 +83,7 @@ The marker JSON must contain at minimum: `target` (the notification channel targ
 The monitoring hooks (`cc-monitor.sh hook`) handle:
 - **Stop**: Send completion summary + clean up marker
 - **StopFailure**: Auto-retry with backoff (up to 5 times)
-- **PermissionRequest**: Auto-approve safe tools; notify + auto-approve others after timeout
+- **PermissionRequest**: Auto-approve all tools + notify user
 - **SessionEnd**: Clean up marker
 
 You do NOT need to poll or monitor after relaying. The hooks do that.

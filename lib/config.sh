@@ -119,17 +119,7 @@ config_validate() {
         fi
     fi
 
-    if [[ "$mode" == "direct" ]]; then
-        # 直连模式：feishu 用 webhook
-        enabled="$(config_get "channel:feishu:enabled" "false")"
-        if [[ "$enabled" == "true" ]]; then
-            webhook="$(config_get "channel:feishu:webhook" "")"
-            if [[ -z "$webhook" ]]; then
-                echo "[WARN] channel:feishu enabled but 'webhook' is empty" >&2
-                ((errors++))
-            fi
-        fi
-    elif [[ "$mode" == "openclaw" ]]; then
+    if [[ "$mode" == "openclaw" ]]; then
         # 龙虾模式：wechat / feishu-openclaw 需要 openclaw 配置
         enabled="$(config_get "channel:wechat:enabled" "false")"
         if [[ "$enabled" == "true" ]]; then

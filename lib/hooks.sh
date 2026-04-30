@@ -92,6 +92,13 @@ handle_stop_failure() {
   fi
 
   # --- Quota limit detection: suppress retry until reset time ---
+  # Skip if already notified (prevents duplicate notifications from repeated StopFailure)
+  local existing_quota
+  existing_quota=$(marker_read "$TMUX_SESSION" "quota_resets_at")
+  if [[ -n "$existing_quota" && "$existing_quota" != "null" && "$existing_quota" != "" ]]; then
+    return 0
+  fi
+
   local pane_text reset_match reset_ts
   pane_text=$(capture_pane "$TMUX_PANE")
   reset_match=$(echo "$pane_text" | grep -oP '\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?= 重置)' | tail -1)
@@ -160,139 +167,130 @@ handle_permission_request() {
     return $?
   fi
 
+  # All other tools: auto-approve + notify + press Enter to dismiss UI
   local detail msg short
   detail=$(get_tool_detail "$HOOK_TOOL_NAME" "$HOOK_TOOL_INPUT")
-  printf -v msg '**[Monitor]** %s 请求执行 %s' "$TMUX_SESSION" "$HOOK_TOOL_NAME"
+  printf -v msg '**[Monitor]** %s 自动批准 %s' "$TMUX_SESSION" "$HOOK_TOOL_NAME"
   [[ -n "$detail" ]] && printf -v msg '%s\n%s' "$msg" "$detail"
+  short="${TMUX_SESSION} ✅ ${HOOK_TOOL_NAME}"
+  [[ -n "$detail" ]] && short="${short} $(truncate_str "$detail" 50)"
+  notify_user "$msg" "$short"
 
-  local auto_approve
-  auto_approve=$(config_get "monitor:auto_approve_permissions" "true")
+  printf '%s\n' '{"decision":"approve"}'
 
-  if [[ "$auto_approve" == "true" ]]; then
-    local timeout_secs
-    timeout_secs=$(config_get "monitor:auto_approve_timeout" "300")
-    printf -v msg '%s\n%s' "$msg" "回复「批准」或「拒绝」，${timeout_secs}秒内未处理将自动批准"
-    short="${TMUX_SESSION} ⚠ 权限: ${HOOK_TOOL_NAME}"
-    [[ -n "$detail" ]] && short="${short} $(truncate_str "$detail" 50)"
-    notify_user "$msg" "$short"
-
-    # Write pending permission to marker for bidirectional IPC
-    local now
-    now=$(date +%s)
-    marker_update "$TMUX_SESSION" ".pending_permission = {
-      tool: \"$HOOK_TOOL_NAME\",
-      created_at: $now,
-      decision: null
-    }"
-
-    # Poll marker for user decision instead of blind sleep
-    local elapsed=0 decision=""
-    while (( elapsed < timeout_secs )); do
-      sleep 5
-      decision=$(marker_read "$TMUX_SESSION" "pending_permission.decision")
-      if [[ -n "$decision" && "$decision" != "null" && "$decision" != "" ]]; then
-        break
-      fi
-      elapsed=$((elapsed + 5))
-    done
-
-    marker_update "$TMUX_SESSION" "del(.pending_permission)"
-
-    if [[ "$decision" == "deny" ]]; then
-      printf '%s\n' '{"decision":"deny"}'
-    else
-      printf '%s\n' '{"decision":"approve"}'
-    fi
-  else
-    printf -v msg '%s\n%s' "$msg" "请手动处理此权限请求"
-    short="${TMUX_SESSION} ⚠ 权限: ${HOOK_TOOL_NAME}"
-    [[ -n "$detail" ]] && short="${short} $(truncate_str "$detail" 50)"
-    notify_user "$msg" "$short"
-    printf '%s\n' '{"decision":"deny"}'
-  fi
+  # Dismiss any confirmation UI (overwrite dialog etc.) that appears after approve
+  ( sleep 2 && tmux send-keys -t "$TMUX_PANE" Enter 2>/dev/null ) & disown
 }
 
 # Handle AskUserQuestion: approve immediately, then manage response via background process
 handle_ask_user_question() {
-  local timeout_secs msg short
-  timeout_secs=$(config_get "monitor:auto_answer_timeout" "300")
+  # Extract all questions up front
+  local questions_json question_count
+  questions_json=$(printf '%s' "$HOOK_TOOL_INPUT" | jq -c '[.questions[]? | {question: .question, options: [.options[]? | .label]}]' 2>/dev/null)
+  question_count=$(printf '%s' "$questions_json" | jq 'length' 2>/dev/null)
+  [[ -z "$question_count" || "$question_count" == "null" || "$question_count" == "0" ]] && question_count=1
 
-  # Build structured notification: question + numbered options
-  local question options_block
-  question=$(printf '%s' "$HOOK_TOOL_INPUT" | jq -r '.questions[0].question // empty' 2>/dev/null)
-  options_block=$(printf '%s' "$HOOK_TOOL_INPUT" | jq -r '
-    .questions[0].options // [] | to_entries[] |
-    " \(.key + 1). \(.value.label)" +
-    (if (.value.description // "") != "" then " — \(.value.description)" else "" end)
-  ' 2>/dev/null)
+  # Kill any stale background process for this session
+  local pid_file="${MARKER_DIR:-/tmp/cc-monitor}/${TMUX_SESSION}.pid"
+  if [[ -f "$pid_file" ]]; then
+    local old_pid
+    old_pid=$(cat "$pid_file" 2>/dev/null)
+    [[ -n "$old_pid" ]] && kill "$old_pid" 2>/dev/null || true
+    rm -f "$pid_file"
+  fi
 
-  printf -v msg '**[Monitor]** %s 提问:\n\n%s' "$TMUX_SESSION" "$(truncate_str "$question" 300)"
-  [[ -n "$options_block" ]] && printf -v msg '%s\n%s' "$msg" "$options_block"
-  printf -v msg '%s\n\n%s' "$msg" "回复选项编号（如「选1」），${timeout_secs}秒未处理将自动选第一个"
-
-  short="${TMUX_SESSION} ❓ $(truncate_str "$question" 60)"
-  notify_user "$msg" "$short"
-
-  # Write pending question to marker
-  local now question options_json
-  now=$(date +%s)
-  question=$(printf '%s' "$HOOK_TOOL_INPUT" | jq -r '.questions[0].question // empty' 2>/dev/null)
-  options_json=$(printf '%s' "$HOOK_TOOL_INPUT" | jq -c '.questions[0].options[]? | .label' 2>/dev/null)
-  marker_update "$TMUX_SESSION" ".pending_question = {
-    question: $(printf '%s' "$question" | jq -Rs .),
-    options: $options_json,
-    created_at: $now,
-    response: null
-  }"
-
-  # Start background process: wait for IM response or timeout
   (
     local session="$TMUX_SESSION"
     local pane="$TMUX_PANE"
     local marker_dir="${MARKER_DIR:-/tmp/cc-monitor}"
     local marker_file="${marker_dir}/${session}.json"
-    local elapsed=0 response=""
+    local questions="$questions_json"
+    local count="$question_count"
+    local _dbg="${marker_dir}/debug/aq-bg-$(date +%s).log"
 
-    # Poll for IM response
-    while (( elapsed < timeout_secs )); do
-      sleep 5
-      response=$(jq -r '.pending_question.response // ""' "$marker_file" 2>/dev/null)
-      if [[ -n "$response" && "$response" != "null" && "$response" != "" ]]; then
-        # User responded via IM — send option number or text
-        if [[ "$response" =~ ^[1-9]$ ]]; then
-          tmux send-keys -t "$pane" "$response" 2>/dev/null || true
-        else
-          # Custom text: select "Type something" then paste
-          local opt_count
-          opt_count=$(jq '.pending_question.options | length' "$marker_file" 2>/dev/null || echo 1)
-          tmux send-keys -t "$pane" "$((opt_count + 1))" 2>/dev/null || true
-          sleep 1
-          tmux set-buffer "$response" 2>/dev/null || true
-          tmux paste-buffer -t "$pane" 2>/dev/null || true
-          sleep 0.3
-          tmux send-keys -t "$pane" Enter 2>/dev/null || true
-        fi
-        local tmp; tmp="$(mktemp "${marker_file}.XXXXXX")"
-        jq "del(.pending_question)" "$marker_file" > "$tmp" 2>/dev/null && mv "$tmp" "$marker_file" || rm -f "$tmp"
-        exit 0
+    echo $$ > "${marker_dir}/${session}.pid"
+    trap 'rm -f "${marker_dir}/${session}.pid"' EXIT
+
+    echo "[$(date)] START session=$session count=$count pane=$pane" > "$_dbg"
+    echo "[$(date)] questions=$questions" >> "$_dbg"
+
+    for ((i=0; i<count; i++)); do
+      local q_text q_options_block
+      q_text=$(printf '%s' "$questions" | jq -r ".[$i].question // empty" 2>/dev/null)
+      q_options_block=$(printf '%s' "$questions" | jq -r "
+        .[$i].options // [] | to_entries[] |
+        \" \(.key + 1). \(.value)\"
+      " 2>/dev/null)
+
+      # Send notification for this question
+      local q_num=$((i + 1)) msg short
+      if (( count > 1 )); then
+        printf -v msg '**[Monitor]** %s 提问 (%d/%d):\n\n%s' "$session" "$q_num" "$count" "$(truncate_str "$q_text" 300)"
+      else
+        printf -v msg '**[Monitor]** %s 提问:\n\n%s' "$session" "$(truncate_str "$q_text" 300)"
       fi
-      elapsed=$((elapsed + 5))
+      [[ -n "$q_options_block" ]] && printf -v msg '%s\n%s' "$msg" "$q_options_block"
+      printf -v msg '%s\n\n%s' "$msg" "回复任意内容作答"
+      short="${session} ❓ $(truncate_str "$q_text" 60)"
+      echo "[$(date)] Q$((i+1)): notify_user starting" >> "$_dbg"
+      notify_user "$msg" "$short"
+      echo "[$(date)] Q$((i+1)): notify_user done" >> "$_dbg"
+
+      # Write pending_response to marker
+      local now
+      now=$(date +%s)
+      marker_update "$session" ".pending_response = {created_at: $now, response: null}"
+      echo "[$(date)] Q$((i+1)): pending_response written" >> "$_dbg"
+
+      # Poll indefinitely for IM response; bail if UI disappears
+      local response=""
+      while true; do
+        sleep 5
+        response=$(jq -r '.pending_response.response // ""' "$marker_file" 2>/dev/null)
+        if [[ -n "$response" && "$response" != "null" && "$response" != "" ]]; then
+          echo "[$(date)] Q$((i+1)): got response='$response'" >> "$_dbg"
+          break
+        fi
+        # Check if AskUserQuestion UI is still visible
+        if ! tmux capture-pane -t "$pane" -p -S -20 2>/dev/null | grep -q "Type something"; then
+          echo "[$(date)] Q$((i+1)): UI gone, skipping" >> "$_dbg"
+          marker_update "$session" "del(.pending_response)"
+          continue 2
+        fi
+      done
+
+      # Find "Type something" key
+      local pane_snapshot type_key
+      pane_snapshot=$(tmux capture-pane -t "$pane" -p -S -20 2>/dev/null)
+      type_key=$(echo "$pane_snapshot" | grep -oP '\d+(?=\. Type something)' | tail -1)
+      [[ -z "$type_key" ]] && type_key=4
+
+      tmux send-keys -t "$pane" "$type_key" 2>/dev/null || true
+      sleep 1
+      tmux set-buffer "$response" 2>/dev/null || true
+      tmux paste-buffer -t "$pane" 2>/dev/null || true
+      sleep 2
+      tmux send-keys -t "$pane" Enter 2>/dev/null || true
+
+      marker_update "$session" "del(.pending_response)"
+
+      # Wait for UI to advance to next question or Submit
+      if (( i < count - 1 )); then
+        sleep 3
+      else
+        sleep 1
+      fi
     done
 
-    # Timeout: select "Type something" and paste default response
-    local opt_count
-    opt_count=$(jq '.pending_question.options | length' "$marker_file" 2>/dev/null || echo 1)
-    tmux send-keys -t "$pane" "$((opt_count + 1))" 2>/dev/null || true
-    sleep 1
-    tmux set-buffer "根据上下文选择最合适的方案" 2>/dev/null || true
-    tmux paste-buffer -t "$pane" 2>/dev/null || true
-    sleep 0.3
-    tmux send-keys -t "$pane" Enter 2>/dev/null || true
-    local tmp; tmp="$(mktemp "${marker_file}.XXXXXX")"
-    jq "del(.pending_question)" "$marker_file" > "$tmp" 2>/dev/null && mv "$tmp" "$marker_file" || rm -f "$tmp"
+    # Submit — only if Submit button is visible
+    local submit_pane
+    submit_pane=$(tmux capture-pane -t "$pane" -p -S -20 2>/dev/null)
+    if echo "$submit_pane" | grep -q "Submit"; then
+      tmux send-keys -t "$pane" Enter 2>/dev/null || true
+    fi
+    rm -f "${marker_dir}/${session}.pid"
   ) & disown
 
-  # Approve immediately so the question appears in the terminal
   printf '%s\n' '{"decision":"approve"}'
 }
 
