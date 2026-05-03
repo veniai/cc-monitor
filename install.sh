@@ -81,7 +81,8 @@ detect_platform() {
 }
 
 check_dependencies() {
-  local required=(bash tmux jq grep curl python3)
+  local required=(bash tmux jq grep curl)
+  local optional=(python3)  # python3: only needed for DingTalk signing
   local missing=()
   for cmd in "${required[@]}"; do
     if ! command -v "$cmd" &>/dev/null; then
@@ -91,6 +92,11 @@ check_dependencies() {
   if (( ${#missing[@]} )); then
     die "Missing required commands: ${missing[*]}. Please install them first."
   fi
+  for cmd in "${optional[@]}"; do
+    if ! command -v "$cmd" &>/dev/null; then
+      warn "$cmd not found — optional (needed for DingTalk signing only)"
+    fi
+  done
   info "All required dependencies satisfied"
 }
 
@@ -600,9 +606,11 @@ do_uninstall() {
         local tmp
         tmp="$(mktemp)"
         jq --arg event "$event" --arg cmd "$hook_command" '
-          .hooks[$event] = (.hooks[$event] // []) | map(
-            .hooks = (.hooks // []) | map(select(.command != $cmd))
-          ) | map(select((.hooks | length) > 0))
+          .hooks[$event] |= (
+            map(
+              .hooks |= map(select(.command != $cmd))
+            ) | map(select((.hooks | length) > 0))
+          )
         ' "$SETTINGS_FILE" > "$tmp" && mv "$tmp" "$SETTINGS_FILE" || { rm -f "$tmp"; }
         info "Removed hook for $event"
       fi
@@ -619,9 +627,11 @@ do_uninstall() {
         local tmp
         tmp="$(mktemp)"
         jq --arg event "$event" --arg cmd "$codex_command" '
-          .hooks[$event] = (.hooks[$event] // []) | map(
-            .hooks = (.hooks // []) | map(select(.command != $cmd))
-          ) | map(select((.hooks | length) > 0))
+          .hooks[$event] |= (
+            map(
+              .hooks |= map(select(.command != $cmd))
+            ) | map(select((.hooks | length) > 0))
+          )
         ' "$SETTINGS_FILE" > "$tmp" && mv "$tmp" "$SETTINGS_FILE" || { rm -f "$tmp"; }
         info "Removed codex hook for $event"
       fi
