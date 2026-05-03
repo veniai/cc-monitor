@@ -35,7 +35,7 @@ Usage:
   install.sh [OPTIONS]
 
 Modes:
-  --mode direct             Direct mode: webhook to Feishu + DingTalk
+  --mode direct             Direct mode: webhook to DingTalk
   --mode openclaw           OpenClaw mode: WeChat/Feishu via lobster, DingTalk webhook
 
 Options:
@@ -703,7 +703,7 @@ main() {
   if $interactive && [[ -z "$mode" ]]; then
     echo ""
     printf "${BOLD}选择安装模式:${NC}\n"
-    echo "  1) 直连模式 — 飞书/钉钉 webhook，零依赖，只有通知"
+    echo "  1) 直连模式 — 钉钉 webhook，零依赖，只有通知"
     echo "  2) 龙虾模式 — 微信/飞书通过 OpenClaw，支持远程输入"
     echo ""
     read -rp "请选择 [1/2]: " mode_choice
