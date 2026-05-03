@@ -606,11 +606,9 @@ do_uninstall() {
         local tmp
         tmp="$(mktemp)"
         jq --arg event "$event" --arg cmd "$hook_command" '
-          .hooks[$event] |= (
-            map(
-              .hooks |= map(select(.command != $cmd))
-            ) | map(select((.hooks | length) > 0))
-          )
+          .hooks[$event] |= ((. // []) | map(
+            .hooks |= map(select(.command != $cmd))
+          ) | map(select((.hooks | length) > 0)))
         ' "$SETTINGS_FILE" > "$tmp" && mv "$tmp" "$SETTINGS_FILE" || { rm -f "$tmp"; }
         info "Removed hook for $event"
       fi
@@ -627,11 +625,9 @@ do_uninstall() {
         local tmp
         tmp="$(mktemp)"
         jq --arg event "$event" --arg cmd "$codex_command" '
-          .hooks[$event] |= (
-            map(
-              .hooks |= map(select(.command != $cmd))
-            ) | map(select((.hooks | length) > 0))
-          )
+          .hooks[$event] |= ((. // []) | map(
+            .hooks |= map(select(.command != $cmd))
+          ) | map(select((.hooks | length) > 0)))
         ' "$SETTINGS_FILE" > "$tmp" && mv "$tmp" "$SETTINGS_FILE" || { rm -f "$tmp"; }
         info "Removed codex hook for $event"
       fi
