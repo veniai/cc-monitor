@@ -147,23 +147,17 @@ _watchdog_recover() {
 
   if (( count >= AUTO_RECOVERY_MAX )); then
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
-      echo "[DRY-RUN] $session 已恢复2次未生效 ($reason)"
+      echo "[DRY-RUN] $session 已恢复${AUTO_RECOVERY_MAX}次未生效 ($reason)"
     else
       notify_user \
-        "**[Monitor]** $session 连续2次恢复未生效 ($reason)，请手动检查" \
+        "**[Monitor]** $session 连续${AUTO_RECOVERY_MAX}次恢复未生效 ($reason)，请手动检查" \
         "$session ⚠ 自动恢复失败"
       marker_update "$session" ".token_first_seen_at = $now"
     fi
   elif [[ "${DRY_RUN:-false}" == "true" ]]; then
     echo "[DRY-RUN] $session 应执行恢复 ($reason, 第$((count + 1))次)"
   else
-    local msg
-    if (( count == 0 )); then
-      msg="临时中断，重试刚才的步骤，不要跳过或变通"
-    else
-      msg="多次超时未完成，请将当前任务拆分为更小的子任务，逐步完成。不要从头重做已完成的部分。"
-    fi
-    recover_session "$pane_id" "$msg"
+    recover_session "$pane_id"
     marker_update "$session" ".auto_recovery_count = ($count + 1) | .token_first_seen_at = $now | .screen_md5_stable_count = 0"
   fi
 }
