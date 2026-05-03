@@ -548,7 +548,7 @@ register_cron() {
   local tmp
   tmp="$(mktemp)"
   crontab -l 2>/dev/null | grep -v "$CRON_MARKER" > "$tmp" || true
-  echo "LC_ALL=C.UTF-8 */5 * * * * cd $SCRIPT_DIR && bash cc-monitor.sh watchdog  $CRON_MARKER" >> "$tmp"
+  echo "*/5 * * * * cd $SCRIPT_DIR && bash cc-monitor.sh watchdog  $CRON_MARKER" >> "$tmp"
   crontab "$tmp"
   rm -f "$tmp"
   info "Watchdog cron registered (every 5 minutes)"
