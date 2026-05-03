@@ -4,8 +4,9 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License">
-  <img src="https://img.shields.io/badge/Claude_Code-Monitor-blue.svg" alt="Claude Code">
   <img src="https://img.shields.io/badge/version-1.1.0-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/Claude_Code-Supported-blue.svg" alt="Claude Code">
+  <img src="https://img.shields.io/badge/Codex_CLI-Supported-blue.svg" alt="Codex CLI">
 </p>
 
 ```
@@ -19,15 +20,15 @@
 ```
 
 <p align="center">
-  <strong>Claude Code 远程监控与控制</strong><br>
+  <strong>Claude Code / Codex CLI 远程监控与控制</strong><br>
   任务完成自动通知 · 会话卡死自动恢复 · 手机远程发命令
 </p>
 
 ---
 
-> Claude Code 跑任务，你人不在电脑前——任务完成了不知道？会话卡死了没人管？权限弹窗挡着流程？
+> Claude Code 或 Codex CLI 跑任务，你人不在电脑前——任务完成了不知道？会话卡死了没人管？权限弹窗挡着流程？
 >
-> cc-monitor 解决这些问题。装一次，Claude Code 的每一步都在你掌控中。
+> cc-monitor 解决这些问题。装一次，跑在 tmux 里的 AI 工具每一步都在你掌控中。支持 Claude Code 和 Codex CLI，理论上任何 tmux 中的 CLI 工具都可以用 Watchdog 监控。
 
 ## 快速体验
 
@@ -61,11 +62,11 @@ cd ~/cc-monitor
 
 ## 核心亮点
 
-**任务完成通知** — Claude Code 任务完成或出错时，自动推送到微信、飞书、钉钉。钉钉直达手表/手环，手腕一震就知道
+**任务完成通知** — Claude Code / Codex CLI 任务完成或出错时，自动推送到微信、飞书、钉钉。钉钉直达手表/手环，手腕一震就知道
 
 **自动恢复** — API 报错自动重试；检测到配额限额后解析重置时间，到点自动恢复，无需人工干预（适配 GLM 智谱包月套餐 5 小时限额）
 
-**远程输入** — 通过 [OpenClaw（龙虾）](https://github.com/veniai/openclaw) 在微信/飞书上直接发消息控制 Claude Code。手机就是遥控器
+**远程输入** — 通过 [OpenClaw（龙虾）](https://github.com/veniai/openclaw) 在微信/飞书上直接发消息控制 Claude Code / Codex CLI。手机就是遥控器
 
 **卡死检测** — Watchdog 每 5 分钟扫描 tmux 会话，20 分钟无进展自动恢复（三道防线：token 不变、等待超时、屏幕冻结），最多自动恢复 2 次后只告警
 
@@ -88,8 +89,8 @@ cd ~/cc-monitor
 
 | 场景 | cc-monitor 做什么 |
 |------|------------------|
-| 让 Claude Code 跑长任务 | 任务完成/出错自动通知到手机 |
-| 不在电脑前 | 手机微信直接发消息给 Claude |
+| 让 Claude Code / Codex 跑长任务 | 任务完成/出错自动通知到手机 |
+| 不在电脑前 | 手机微信直接发消息给 Claude / Codex |
 | 会话卡死没人管 | Watchdog 自动检测并恢复 |
 | API 配额用完 | 检测限额时间，到点自动恢复 |
 | Claude Code + Codex 同时用 | 双工具监控，同一套通知渠道 |

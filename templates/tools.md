@@ -27,7 +27,7 @@ For channel-specific values (target, account), read the config file at `configPa
 1. Write marker file to {markerDir}/{session}.json
 2. tmux set-buffer "message text"
 3. tmux paste-buffer -t <session>
-4. sleep briefly
+4. sleep 1
 5. tmux send-keys -t <session> Enter
 ```
 
@@ -53,8 +53,8 @@ After you relay a message, cc-monitor's hooks take over automatically:
 |-------|--------------|
 | Task completes | Sends completion summary to user, cleans up marker |
 | API error | Auto-retries with exponential backoff (up to 5x) |
-| Permission request | Safe tools auto-approved; others: notify user, poll marker for decision, auto-approve on timeout |
-| AskUserQuestion | Approves immediately, notifies user with question, polls marker for response, ESC+default on timeout |
+| Permission request | Auto-approve all tools + notify user; AskUserQuestion waits for user IM response (no auto-select) |
+| AskUserQuestion | Approves immediately, notifies user, selects "Type something" input, polls marker for response, pastes and submits |
 | Quota exceeded | Detects reset time, suppresses retry until quota resets |
 | Session ends | Cleans up marker file |
 | Session stuck | Watchdog (cron) detects frozen sessions and recovers them |
