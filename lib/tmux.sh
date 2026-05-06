@@ -16,7 +16,7 @@ find_tmux_session() {
 # Send recovery key sequence to a stuck Claude Code session
 recover_session() {
   local target="${1:?target pane/session required}"
-  local message="${2:-响应超时。继续刚才中断的工作。如果单步操作仍会很长，先将其拆成更小的步骤再逐步执行。已完成的步骤不要重做。}"
+  local message="${2:-临时中断。继续刚才的步骤，先检查 TaskList 再接着做。单步过长可拆分，不要跳过或变通。}"
   tmux send-keys -t "$target" -X cancel 2>/dev/null || true
   sleep 0.3
   tmux send-keys -t "$target" Escape 2>/dev/null || true
