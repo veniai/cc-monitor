@@ -16,7 +16,7 @@ find_tmux_session() {
 # Send recovery key sequence to a stuck Claude Code session
 recover_session() {
   local target="${1:?target pane/session required}"
-  local message="${2:-临时中断。继续刚才的步骤，先检查 TaskList 再接着做。单步过长可拆分，不要跳过或变通。}"
+  local message="${2:-临时中断。恢复后读 TaskList 继续当前 task：有 skill 必须调 Skill tool 并严格按 skill 流程执行（不得 inline 替代）；单步过长可拆分但不跳过；已完成不重做}"
   tmux send-keys -t "$target" -X cancel 2>/dev/null || true
   sleep 0.3
   tmux send-keys -t "$target" Escape 2>/dev/null || true
