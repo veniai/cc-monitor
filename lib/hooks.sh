@@ -28,11 +28,15 @@ is_permanent_error() {
 
 is_safe_tool() {
   local tool="$1"
-  case "$tool" in
-    Read|Glob|Grep|Agent|TaskCreate|TaskGet|TaskList|TaskUpdate|NotebookEdit|ListMcpResourcesTool|ReadMcpResourceTool|mcp__plugin_context7_*)
-      return 0 ;;
-    *) return 1 ;;
-  esac
+  # Check hardcoded glob pattern first
+  [[ "$tool" == mcp__plugin_context7_* ]] && return 0
+  # Check against config-driven comma-separated list
+  local IFS=','
+  local t
+  for t in $SAFE_TOOLS_LIST; do
+    [[ "$tool" == "$t" ]] && return 0
+  done
+  return 1
 }
 
 truncate_str() {
