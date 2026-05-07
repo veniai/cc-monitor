@@ -42,6 +42,7 @@ Options:
   --interactive             Prompt for each configuration value
   --enable-watchdog         Register watchdog cron job (every 5 min)
   --enable-codex            Register Stop hook for Codex CLI
+  --agent <name>            Use existing OpenClaw agent (skip agent creation)
   --uninstall               Remove hooks, cron, optionally config
   --help                    Show this help
 
@@ -265,18 +266,30 @@ prompt_openclaw_config() {
 
   # openclaw agent config
   echo ""
-  printf "${BOLD}--- 龙虾 Agent 配置 ---${NC}\n"
-  read -rp "使用子 Agent 还是主 Agent? (推荐子Agent) [sub/main] " agent_ans
-  if [[ "${agent_ans,,}" == "main" ]]; then
-    set_config_value "$conf" "agent_mode" "main" "openclaw"
-    info "使用龙虾主 Agent"
+  printf -- "${BOLD}--- 龙虾 Agent 配置 ---${NC}\n"
+
+  if [[ -n "$agent_override" ]]; then
+    info "使用已有 Agent: $agent_override"
+    set_config_value "$conf" "agent_mode" "existing" "openclaw"
+    set_config_value "$conf" "agent_name" "$agent_override" "openclaw"
+    local workspace
+    workspace=$(openclaw agents list 2>/dev/null | awk "/^- ${agent_override}[ (]/{found=1} found && /Workspace:/{gsub(/^[ \t]*Workspace:[ \t]*/,\"\"); print; exit}")
+    workspace="${workspace:-$HOME/.openclaw/workspace}"
+    generate_workspace_manifest "$workspace" "$agent_override"
+    render_workspace_templates "$workspace"
   else
-    set_config_value "$conf" "agent_mode" "sub" "openclaw"
-    local agent_name="cc-monitor"
-    read -rp "  子 Agent 名称（回车使用 cc-monitor）: " name_input
-    [[ -n "$name_input" ]] && agent_name="$name_input"
-    set_config_value "$conf" "agent_name" "$agent_name" "openclaw"
-    setup_openclaw_subagent "$agent_name"
+    read -rp "使用子 Agent 还是主 Agent? (推荐子Agent) [sub/main] " agent_ans
+    if [[ "${agent_ans,,}" == "main" ]]; then
+      set_config_value "$conf" "agent_mode" "main" "openclaw"
+      info "使用龙虾主 Agent"
+    else
+      set_config_value "$conf" "agent_mode" "sub" "openclaw"
+      local agent_name="cc-monitor"
+      read -rp "  子 Agent 名称（回车使用 cc-monitor）: " name_input
+      [[ -n "$name_input" ]] && agent_name="$name_input"
+      set_config_value "$conf" "agent_name" "$agent_name" "openclaw"
+      setup_openclaw_subagent "$agent_name"
+    fi
   fi
 }
 
@@ -291,7 +304,7 @@ setup_openclaw_subagent() {
 
   if (( agent_count <= 1 )); then
     # Single agent or no agents — use main workspace
-    workspace=$(openclaw agents list 2>/dev/null | grep -A5 "main" | grep -oP 'Workspace:\s*\K.*' | head -1)
+    workspace=$(openclaw agents list 2>/dev/null | awk '/^- main /{found=1} found && /Workspace:/{gsub(/^[ \t]*Workspace:[ \t]*/,""); print; exit}')
     workspace="${workspace:-$HOME/.openclaw/workspace}"
     info "单 Agent 环境，部署到: $workspace"
   else
@@ -310,7 +323,7 @@ setup_openclaw_subagent() {
     fi
   fi
 
-  if openclaw agents list 2>/dev/null | grep -q "$agent_name"; then
+  if openclaw agents list 2>/dev/null | grep -q "^- ${agent_name}[ (]"; then
     info "子 Agent '$agent_name' 已存在，跳过创建"
     generate_workspace_manifest "$workspace" "$agent_name"
     render_workspace_templates "$workspace"
@@ -664,7 +677,7 @@ do_uninstall() {
 # Main
 # ---------------------------------------------------------------------------
 main() {
-  local mode="" interactive=false enable_watchdog=false enable_codex=false do_uninstall_flag=false
+  local mode="" interactive=false enable_watchdog=false enable_codex=false do_uninstall_flag=false agent_override=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -672,6 +685,11 @@ main() {
         mode="${2:-}"
         [[ -z "$mode" ]] && die "--mode requires a value (direct|openclaw)"
         [[ "$mode" != "direct" && "$mode" != "openclaw" ]] && die "Unknown mode: $mode"
+        shift 2
+        ;;
+      --agent)
+        agent_override="${2:-}"
+        [[ -z "$agent_override" ]] && die "--agent requires a value"
         shift 2
         ;;
       --interactive)
