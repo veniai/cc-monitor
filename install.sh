@@ -378,17 +378,13 @@ generate_workspace_manifest() {
 
   mkdir -p "$workspace"
 
-  local channel_id
+  local channel_id="openclaw-weixin"
   # Detect the actual enabled channel: prefer wechat, then feishu-openclaw
-  local wechat_enabled feishu_enabled
-  wechat_enabled=$(config_get_from_file "$CONFIG_DIR/config.conf" "channel:wechat:enabled" "false")
-  feishu_enabled=$(config_get_from_file "$CONFIG_DIR/config.conf" "channel:feishu-openclaw:enabled" "false")
-  if [[ "$wechat_enabled" == "true" ]]; then
-    channel_id=$(config_get_from_file "$CONFIG_DIR/config.conf" "channel:wechat:openclaw_channel" "openclaw-weixin")
-  elif [[ "$feishu_enabled" == "true" ]]; then
-    channel_id=$(config_get_from_file "$CONFIG_DIR/config.conf" "channel:feishu-openclaw:openclaw_channel" "feishu")
-  else
-    channel_id="openclaw-weixin"
+  local conf="$CONFIG_DIR/config.conf"
+  if [[ "$(config_get_from_file "$conf" "channel:wechat:enabled" "false")" == "true" ]]; then
+    channel_id=$(config_get_from_file "$conf" "channel:wechat:openclaw_channel" "openclaw-weixin")
+  elif [[ "$(config_get_from_file "$conf" "channel:feishu-openclaw:enabled" "false")" == "true" ]]; then
+    channel_id=$(config_get_from_file "$conf" "channel:feishu-openclaw:openclaw_channel" "feishu")
   fi
 
   jq -n \
@@ -428,19 +424,13 @@ render_workspace_templates() {
     [tools.md]=TOOLS.md
     [soul.md]=SOUL.md
   )
-  local required_files=("agents.md" "tools.md" "soul.md")
 
-  for src_name in "${required_files[@]}"; do
+  for src_name in "${!tmpl_map[@]}"; do
     local src="$templates_dir/$src_name"
-    local dest_name="${tmpl_map[$src_name]:-$src_name}"
+    local dest_name="${tmpl_map[$src_name]}"
     local dest="$workspace/$dest_name"
 
     [[ ! -f "$src" ]] && continue
-
-    local is_required=false
-    for req in "${required_files[@]}"; do
-      [[ "$src_name" == "$req" ]] && is_required=true && break
-    done
 
     if [[ ! -f "$dest" ]]; then
       cp "$src" "$dest"
@@ -450,33 +440,22 @@ render_workspace_templates() {
 
     # File exists — check managed marker
     if grep -q 'cc-monitor-managed:' "$dest" 2>/dev/null; then
-      if $is_required; then
-        # Required + managed: update if template changed
-        if ! diff -q "$src" "$dest" &>/dev/null; then
-          cp "$src" "$dest"
-          info "Updated: $dest_name (template newer)"
-        fi
+      # Managed file: update if template changed
+      if ! diff -q "$src" "$dest" &>/dev/null; then
+        cp "$src" "$dest"
+        info "Updated: $dest_name (template newer)"
+      fi
+    elif [[ "${INTERACTIVE:-false}" == "true" ]]; then
+      # User-created file: ask in interactive mode
+      read -rp "$dest_name exists (user-customized). Overwrite? [y/N] " ans
+      if [[ "${ans,,}" == "y" ]]; then
+        cp "$src" "$dest"
+        info "Overwritten: $dest_name"
       else
-        # Optional + managed: user may have customized after creation, skip
-        info "Skipped: $dest_name (optional, already deployed)"
+        info "Skipped: $dest_name (user choice)"
       fi
     else
-      # User-created file (no managed marker)
-      if $is_required; then
-        if [[ "${INTERACTIVE:-false}" == "true" ]]; then
-          read -rp "$dest_name exists (user-customized). Overwrite? [y/N] " ans
-          if [[ "${ans,,}" == "y" ]]; then
-            cp "$src" "$dest"
-            info "Overwritten: $dest_name"
-          else
-            info "Skipped: $dest_name (user choice)"
-          fi
-        else
-          info "Skipped: $dest_name (user-customized, non-interactive)"
-        fi
-      else
-        info "Skipped: $dest_name (user-customized, optional)"
-      fi
+      info "Skipped: $dest_name (user-customized, non-interactive)"
     fi
   done
 }
@@ -533,16 +512,12 @@ register_hooks() {
     fi
 
     local entry
+    entry="$(jq -n --arg cmd "$hook_command" '{
+      matcher: "",
+      hooks: [{ type: "command", command: $cmd }]
+    }')"
     if [[ "$event" == "SessionEnd" ]]; then
-      entry="$(jq -n --arg cmd "$hook_command" '{
-        matcher: "",
-        hooks: [{ type: "command", command: $cmd, timeout: 5000 }]
-      }')"
-    else
-      entry="$(jq -n --arg cmd "$hook_command" '{
-        matcher: "",
-        hooks: [{ type: "command", command: $cmd }]
-      }')"
+      entry="$(echo "$entry" | jq '.hooks[0].timeout = 5000')"
     fi
 
     local tmp
@@ -611,49 +586,42 @@ register_codex_hook() {
 }
 
 # ---------------------------------------------------------------------------
+# uninstall helpers
+# ---------------------------------------------------------------------------
+# Remove all hook entries matching a command from specified events
+remove_hooks_for_command() {
+  local cmd="$1"
+  shift
+  local events=("$@")
+
+  for event in "${events[@]}"; do
+    local existing
+    existing="$(jq -r --arg event "$event" --arg cmd "$cmd" '
+      .hooks[$event] // [] | map(select(.hooks[]?.command == $cmd)) | length
+    ' "$SETTINGS_FILE" 2>/dev/null || echo "0")"
+    if [[ "$existing" != "0" ]]; then
+      local tmp
+      tmp="$(mktemp)"
+      jq --arg event "$event" --arg cmd "$cmd" '
+        .hooks[$event] |= ((. // []) | map(
+          .hooks |= map(select(.command != $cmd))
+        ) | map(select((.hooks | length) > 0)))
+      ' "$SETTINGS_FILE" > "$tmp" && mv "$tmp" "$SETTINGS_FILE" || { rm -f "$tmp"; }
+      info "Removed hook for $event"
+    fi
+  done
+}
+
+# ---------------------------------------------------------------------------
 # uninstall
 # ---------------------------------------------------------------------------
 do_uninstall() {
   printf -- "\n${BOLD}=== Uninstall cc-monitor ===${NC}\n\n"
-  local hook_command="bash $HOOK_SCRIPT hook"
 
   if [[ -f "$SETTINGS_FILE" ]]; then
     local hook_events=("Stop" "StopFailure" "PermissionRequest" "SessionEnd")
-    for event in "${hook_events[@]}"; do
-      local existing
-      existing="$(jq -r --arg event "$event" --arg cmd "$hook_command" '
-        .hooks[$event] // [] | map(select(.hooks[]?.command == $cmd)) | length
-      ' "$SETTINGS_FILE" 2>/dev/null || echo "0")"
-      if [[ "$existing" != "0" ]]; then
-        local tmp
-        tmp="$(mktemp)"
-        jq --arg event "$event" --arg cmd "$hook_command" '
-          .hooks[$event] |= ((. // []) | map(
-            .hooks |= map(select(.command != $cmd))
-          ) | map(select((.hooks | length) > 0)))
-        ' "$SETTINGS_FILE" > "$tmp" && mv "$tmp" "$SETTINGS_FILE" || { rm -f "$tmp"; }
-        info "Removed hook for $event"
-      fi
-    done
-    # Also remove codex hook entries
-    local codex_command="bash $HOOK_SCRIPT codex"
-    local codex_events=("Stop")
-    for event in "${codex_events[@]}"; do
-      local existing
-      existing="$(jq -r --arg event "$event" --arg cmd "$codex_command" '
-        .hooks[$event] // [] | map(select(.hooks[]?.command == $cmd)) | length
-      ' "$SETTINGS_FILE" 2>/dev/null || echo "0")"
-      if [[ "$existing" != "0" ]]; then
-        local tmp
-        tmp="$(mktemp)"
-        jq --arg event "$event" --arg cmd "$codex_command" '
-          .hooks[$event] |= ((. // []) | map(
-            .hooks |= map(select(.command != $cmd))
-          ) | map(select((.hooks | length) > 0)))
-        ' "$SETTINGS_FILE" > "$tmp" && mv "$tmp" "$SETTINGS_FILE" || { rm -f "$tmp"; }
-        info "Removed codex hook for $event"
-      fi
-    done
+    remove_hooks_for_command "bash $HOOK_SCRIPT hook" "${hook_events[@]}"
+    remove_hooks_for_command "bash $HOOK_SCRIPT codex" "Stop"
 
     local tmp
     tmp="$(mktemp)"

@@ -29,18 +29,21 @@ run_health_check() {
   else
     echo "[WARN] tmux not running"
   fi
-  local plugin channel_name enabled any_enabled=false
+  local plugin channel_name enabled channel_found=false
   for plugin in "$SCRIPT_DIR/channels/"*.sh; do
     [[ -f "$plugin" ]] || continue
     channel_name=$(basename "$plugin" .sh)
     [[ "$channel_name" == _* ]] && continue
     enabled=$(config_get "channel:${channel_name}:enabled" "false")
-    [[ "$enabled" == "true" ]] && echo "[OK] Channel: $channel_name (enabled)" && any_enabled=true
+    if [[ "$enabled" == "true" ]]; then
+      echo "[OK] Channel: $channel_name (enabled)"
+      channel_found=true
+    fi
   done
-  [[ "$any_enabled" != "true" ]] && echo "[WARN] No channels enabled"
+  [[ "$channel_found" == "false" ]] && echo "[WARN] No channels enabled"
   if [[ -f "$HOME/.claude/settings.json" ]]; then
     local hook_count
-    hook_count=$(jq '.hooks | to_entries | map(select(.key == "Stop" or .key == "StopFailure" or .key == "PermissionRequest" or .key == "SessionEnd")) | length' "$HOME/.claude/settings.json" 2>/dev/null || echo 0)
+    hook_count=$(jq '[.hooks | keys[] | select(test("^(Stop|StopFailure|PermissionRequest|SessionEnd)$"))] | length' "$HOME/.claude/settings.json" 2>/dev/null || echo 0)
     (( hook_count >= 4 )) && echo "[OK] Hooks: $hook_count events" || echo "[WARN] Hooks: $hook_count/4 registered"
   fi
 }
