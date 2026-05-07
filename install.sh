@@ -189,11 +189,11 @@ prompt_openclaw_config() {
 
   # detect wechat login
   local has_wechat=false has_feishu=false
-  if openclaw channels list 2>/dev/null | grep -q "openclaw-weixin"; then
+  if openclaw channels list 2>/dev/null | grep -qi "wechat\|weixin"; then
     has_wechat=true
     info "检测到已配置的微信通道"
   fi
-  if openclaw channels list 2>/dev/null | grep -q "feishu"; then
+  if openclaw channels list 2>/dev/null | grep -qi "feishu"; then
     has_feishu=true
     info "检测到已配置的飞书通道"
   fi
@@ -203,7 +203,7 @@ prompt_openclaw_config() {
     read -rp "启用微信通知? [Y/n] " ans
     if [[ "${ans,,}" != "n" ]]; then
       local wechat_account wechat_target
-      wechat_account=$(openclaw channels list 2>/dev/null | grep "openclaw-weixin" | awk '{print $2}' | cut -d: -f1)
+      wechat_account=$(openclaw channels list 2>/dev/null | grep -i "wechat\|weixin" | head -1 | sed 's/.*[Ww]echat\s*\([^:]*\):.*/\1/' | xargs)
       if [[ -n "$wechat_account" ]]; then
         info "微信账号: $wechat_account"
         set_config_value "$conf" "enabled" "true" "channel:wechat"
@@ -233,7 +233,7 @@ prompt_openclaw_config() {
       set_config_value "$conf" "enabled" "true" "channel:feishu-openclaw"
       local feishu_account feishu_target
       # Auto-detect feishu accounts from openclaw config
-      feishu_account=$(openclaw channels list 2>/dev/null | grep "feishu" | awk '{print $2}' | cut -d: -f1 | head -1)
+      feishu_account=$(openclaw channels list 2>/dev/null | grep -i "feishu" | head -1 | sed 's/.*[Ff]eishu\s*\([^:]*\):.*/\1/' | xargs)
       read -rp "  飞书 account（回车使用自动检测: $feishu_account）: " input
       [[ -n "$input" ]] && feishu_account="$input"
       set_config_value "$conf" "openclaw_account" "$feishu_account" "channel:feishu-openclaw"
