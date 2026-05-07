@@ -427,13 +427,10 @@ render_workspace_templates() {
     [agents.md]=AGENTS.md
     [tools.md]=TOOLS.md
     [soul.md]=SOUL.md
-    [identity.md]=IDENTITY.md
-    [user.md]=USER.md
   )
   local required_files=("agents.md" "tools.md" "soul.md")
-  local optional_files=("identity.md" "user.md")
 
-  for src_name in "${required_files[@]}" "${optional_files[@]}"; do
+  for src_name in "${required_files[@]}"; do
     local src="$templates_dir/$src_name"
     local dest_name="${tmpl_map[$src_name]:-$src_name}"
     local dest="$workspace/$dest_name"
