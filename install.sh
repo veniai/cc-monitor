@@ -147,6 +147,18 @@ generate_config() {
   info "Config created at $CONFIG_DIR/config.conf (mode=$mode)"
 }
 
+# Migrate config: add missing keys on upgrade without overwriting user values
+migrate_config() {
+  local conf="$CONFIG_DIR/config.conf"
+  [[ ! -f "$conf" ]] && return 0
+
+  # Ensure dingtalk keyword exists
+  if [[ -z "$(config_get_from_file "$conf" "keyword" "channel:dingtalk")" ]]; then
+    set_config_value "$conf" "keyword" "~" "channel:dingtalk"
+    info "Config migrated: added channel:dingtalk:keyword"
+  fi
+}
+
 # ---------------------------------------------------------------------------
 # direct mode config
 # ---------------------------------------------------------------------------
@@ -747,6 +759,7 @@ main() {
   detect_platform
   check_dependencies
   generate_config "$mode" "$interactive"
+  migrate_config
 
   # Warn if no channels enabled in non-interactive mode
   if ! $interactive; then
