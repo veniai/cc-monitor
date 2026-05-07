@@ -16,11 +16,13 @@ find_tmux_session() {
 # Send recovery key sequence to a stuck Claude Code session
 recover_session() {
   local target="${1:?target pane/session required}"
+  local recovery_msg
+  recovery_msg="$(config_get 'monitor:recovery_message' '临时中断，重试刚才的步骤，不要跳过或变通')"
   tmux send-keys -t "$target" -X cancel 2>/dev/null || true
   sleep 0.3
   tmux send-keys -t "$target" Escape 2>/dev/null || true
   sleep 0.5
-  tmux set-buffer "临时中断，重试刚才的步骤，不要跳过或变通" 2>/dev/null || true
+  tmux set-buffer "$recovery_msg" 2>/dev/null || true
   tmux paste-buffer -t "$target" 2>/dev/null || true
   sleep 0.5
   tmux send-keys -t "$target" Enter 2>/dev/null || true

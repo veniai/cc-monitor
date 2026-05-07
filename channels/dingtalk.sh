@@ -11,8 +11,12 @@ channel_send() {
   [[ -z "$webhook" ]] && return 1
 
   # DingTalk uses short_msg (designed for smartwatch/glance display)
-  # Ensure keyword (~) is present for DingTalk bot filter
-  [[ "$short_msg" != *'~'* ]] && short_msg="~ ${short_msg}"
+  # Ensure keyword is present for DingTalk bot filter
+  local keyword
+  keyword=$(config_get "channel:dingtalk:keyword" "~")
+  if [[ -n "$keyword" && "$short_msg" != *"$keyword"* ]]; then
+    short_msg="${keyword} ${short_msg}"
+  fi
 
   local url="$webhook"
   if [[ -n "$secret" ]]; then

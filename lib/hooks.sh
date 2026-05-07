@@ -28,11 +28,15 @@ is_permanent_error() {
 
 is_safe_tool() {
   local tool="$1"
-  case "$tool" in
-    Read|Glob|Grep|Agent|TaskCreate|TaskGet|TaskList|TaskUpdate|NotebookEdit|ListMcpResourcesTool|ReadMcpResourceTool|mcp__plugin_context7_*)
-      return 0 ;;
-    *) return 1 ;;
-  esac
+  # MCP context tools always safe
+  [[ "$tool" == mcp__plugin_context7_* ]] && return 0
+  # Check config-driven safe_tools list
+  local IFS=','
+  local safe
+  for safe in $SAFE_TOOLS_LIST; do
+    [[ "$tool" == "$safe" ]] && return 0
+  done
+  return 1
 }
 
 truncate_str() {
@@ -164,7 +168,7 @@ handle_permission_request() {
 
   if [[ "$auto_approve" == "true" ]]; then
     local timeout_secs
-    timeout_secs=$(config_get "monitor:auto_approve_timeout" "300")
+    timeout_secs=$(config_get "monitor:auto_approve_timeout" "60")
     printf -v msg '%s\n%s' "$msg" "${timeout_secs}秒内未处理将自动批准"
     short="${TMUX_SESSION} ⚠ 权限: ${HOOK_TOOL_NAME}"
     [[ -n "$detail" ]] && short="${short} $(truncate_str "$detail" 50)"

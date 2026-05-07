@@ -9,6 +9,12 @@ handle_watchdog() {
   local prev_token first_seen now count wait_raw wait_secs
   local wait_indicator
 
+  # Auto-cleanup debug logs (same as dump_debug in hooks)
+  local debug_dir="${MARKER_DIR:-/tmp/cc-monitor}/debug"
+  if [[ -d "$debug_dir" ]]; then
+    ls -t "$debug_dir"/*.json 2>/dev/null | tail -n +21 | xargs rm -f 2>/dev/null || true
+  fi
+
   while read -r session pane_id; do
     [[ -z "$session" ]] && continue
 
