@@ -785,6 +785,18 @@ main() {
   fi
 
   register_hooks
+
+  # Upgrade: update workspace templates if manifest exists
+  if [[ -f "$CONFIG_DIR/config.conf" ]]; then
+    local existing_manifest
+    existing_manifest=$(find "$HOME/.openclaw" -name "cc-monitor.workspace.json" -maxdepth 3 2>/dev/null | head -1)
+    if [[ -n "$existing_manifest" ]]; then
+      local ws_dir
+      ws_dir=$(dirname "$existing_manifest")
+      render_workspace_templates "$ws_dir"
+    fi
+  fi
+
   register_cron "$enable_watchdog"
 
   if $enable_codex; then
