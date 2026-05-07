@@ -20,7 +20,7 @@ else
 fi
 
 info()  { printf "${GREEN}[INFO]${NC}  %s\n" "$*"; }
-warn()  { printf "${YELLOW}[WARN]${NC}  %s\n" "$*"; }
+warn()  { printf -- "${YELLOW}[WARN]${NC}  %s\n" "$*"; }
 error() { printf "${RED}[ERROR]${NC} %s\n" "$*" >&2; }
 die()   { error "$@"; exit 1; }
 
@@ -153,7 +153,7 @@ generate_config() {
 prompt_direct_config() {
   local conf="$CONFIG_DIR/config.conf"
   echo ""
-  printf "${BOLD}--- 直连模式配置 ---${NC}\n"
+  printf -- "${BOLD}--- 直连模式配置 ---${NC}\n"
   printf "只需配置 webhook，不依赖任何外部服务\n\n"
 
   read -rp "启用钉钉（强通知，手表/手环）? [Y/n] " ans
@@ -173,7 +173,7 @@ prompt_direct_config() {
 prompt_openclaw_config() {
   local conf="$CONFIG_DIR/config.conf"
   echo ""
-  printf "${BOLD}--- 龙虾模式配置 ---${NC}\n"
+  printf -- "${BOLD}--- 龙虾模式配置 ---${NC}\n"
   printf "通过 OpenClaw 发送微信/飞书通知，支持远程输入\n\n"
 
   # detect openclaw
@@ -218,7 +218,7 @@ prompt_openclaw_config() {
     read -rp "配置微信通道? [y/N] " ans
     if [[ "${ans,,}" == "y" ]]; then
       echo ""
-      printf "${YELLOW}需要登录微信${NC}\n"
+      printf -- "${YELLOW}需要登录微信${NC}\n"
       if openclaw channels login --channel weixin 2>/dev/null; then
         info "微信登录成功，请重新运行 install.sh --interactive 以配置微信通知"
       else
@@ -310,7 +310,7 @@ setup_openclaw_subagent() {
   else
     # Multiple agents — list them and ask
     echo ""
-    printf "${BOLD}检测到 %d 个 Agent，选择 cc-monitor 代理部署到哪个 workspace:${NC}\n" "$agent_count"
+    printf -- "${BOLD}检测到 %d 个 Agent，选择 cc-monitor 代理部署到哪个 workspace:${NC}\n" "$agent_count"
     openclaw agents list 2>/dev/null | grep -E "^- |Workspace:" | paste - - | while read -r line; do
       echo "  $line"
     done
@@ -605,7 +605,7 @@ register_codex_hook() {
 # uninstall
 # ---------------------------------------------------------------------------
 do_uninstall() {
-  printf "\n${BOLD}=== Uninstall cc-monitor ===${NC}\n\n"
+  printf -- "\n${BOLD}=== Uninstall cc-monitor ===${NC}\n\n"
   local hook_command="bash $HOOK_SCRIPT hook"
 
   if [[ -f "$SETTINGS_FILE" ]]; then
@@ -726,7 +726,7 @@ main() {
   # interactive mode selection
   if $interactive && [[ -z "$mode" ]]; then
     echo ""
-    printf "${BOLD}选择安装模式:${NC}\n"
+    printf -- "${BOLD}选择安装模式:${NC}\n"
     echo "  1) 直连模式 — 钉钉 webhook，零依赖，只有通知"
     echo "  2) 龙虾模式 — 微信/飞书通过 OpenClaw，支持远程输入"
     echo ""
