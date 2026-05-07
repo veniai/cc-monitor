@@ -16,6 +16,7 @@ source "$SCRIPT_DIR/lib/hooks.sh"
 source "$SCRIPT_DIR/lib/watchdog.sh"
 
 config_load
+config_validate
 
 case "${1:-help}" in
   hook)
