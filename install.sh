@@ -20,7 +20,7 @@ else
 fi
 
 info()  { printf "${GREEN}[INFO]${NC}  %s\n" "$*"; }
-warn()  { printf "${YELLOW}[WARN]${NC}  %s\n" "$*"; }
+warn()  { printf -- "${YELLOW}[WARN]${NC}  %s\n" "$*"; }
 error() { printf "${RED}[ERROR]${NC} %s\n" "$*" >&2; }
 die()   { error "$@"; exit 1; }
 
@@ -42,6 +42,7 @@ Options:
   --interactive             Prompt for each configuration value
   --enable-watchdog         Register watchdog cron job (every 5 min)
   --enable-codex            Register Stop hook for Codex CLI
+  --agent <name>            Use existing OpenClaw agent (skip agent creation)
   --uninstall               Remove hooks, cron, optionally config
   --help                    Show this help
 
@@ -146,13 +147,25 @@ generate_config() {
   info "Config created at $CONFIG_DIR/config.conf (mode=$mode)"
 }
 
+# Migrate config: add missing keys on upgrade without overwriting user values
+migrate_config() {
+  local conf="$CONFIG_DIR/config.conf"
+  [[ ! -f "$conf" ]] && return 0
+
+  # Ensure dingtalk keyword exists
+  if [[ -z "$(config_get_from_file "$conf" "keyword" "channel:dingtalk")" ]]; then
+    set_config_value "$conf" "keyword" "~" "channel:dingtalk"
+    info "Config migrated: added channel:dingtalk:keyword"
+  fi
+}
+
 # ---------------------------------------------------------------------------
 # direct mode config
 # ---------------------------------------------------------------------------
 prompt_direct_config() {
   local conf="$CONFIG_DIR/config.conf"
   echo ""
-  printf "${BOLD}--- 直连模式配置 ---${NC}\n"
+  printf -- "${BOLD}--- 直连模式配置 ---${NC}\n"
   printf "只需配置 webhook，不依赖任何外部服务\n\n"
 
   read -rp "启用钉钉（强通知，手表/手环）? [Y/n] " ans
@@ -172,7 +185,7 @@ prompt_direct_config() {
 prompt_openclaw_config() {
   local conf="$CONFIG_DIR/config.conf"
   echo ""
-  printf "${BOLD}--- 龙虾模式配置 ---${NC}\n"
+  printf -- "${BOLD}--- 龙虾模式配置 ---${NC}\n"
   printf "通过 OpenClaw 发送微信/飞书通知，支持远程输入\n\n"
 
   # detect openclaw
@@ -189,11 +202,11 @@ prompt_openclaw_config() {
 
   # detect wechat login
   local has_wechat=false has_feishu=false
-  if openclaw channels list 2>/dev/null | grep -q "openclaw-weixin"; then
+  if openclaw channels list 2>/dev/null | grep -qi "wechat\|weixin"; then
     has_wechat=true
     info "检测到已配置的微信通道"
   fi
-  if openclaw channels list 2>/dev/null | grep -q "feishu"; then
+  if openclaw channels list 2>/dev/null | grep -qi "feishu"; then
     has_feishu=true
     info "检测到已配置的飞书通道"
   fi
@@ -203,7 +216,7 @@ prompt_openclaw_config() {
     read -rp "启用微信通知? [Y/n] " ans
     if [[ "${ans,,}" != "n" ]]; then
       local wechat_account wechat_target
-      wechat_account=$(openclaw channels list 2>/dev/null | grep "openclaw-weixin" | awk '{print $2}' | cut -d: -f1)
+      wechat_account=$(openclaw channels list 2>/dev/null | grep -i "wechat\|weixin" | head -1 | sed 's/.*[Ww]echat\s*\([^:]*\):.*/\1/' | xargs)
       if [[ -n "$wechat_account" ]]; then
         info "微信账号: $wechat_account"
         set_config_value "$conf" "enabled" "true" "channel:wechat"
@@ -217,7 +230,7 @@ prompt_openclaw_config() {
     read -rp "配置微信通道? [y/N] " ans
     if [[ "${ans,,}" == "y" ]]; then
       echo ""
-      printf "${YELLOW}需要登录微信${NC}\n"
+      printf -- "${YELLOW}需要登录微信${NC}\n"
       if openclaw channels login --channel weixin 2>/dev/null; then
         info "微信登录成功，请重新运行 install.sh --interactive 以配置微信通知"
       else
@@ -233,7 +246,7 @@ prompt_openclaw_config() {
       set_config_value "$conf" "enabled" "true" "channel:feishu-openclaw"
       local feishu_account feishu_target
       # Auto-detect feishu accounts from openclaw config
-      feishu_account=$(openclaw channels list 2>/dev/null | grep "feishu" | awk '{print $2}' | cut -d: -f1 | head -1)
+      feishu_account=$(openclaw channels list 2>/dev/null | grep -i "feishu" | head -1 | sed 's/.*[Ff]eishu\s*\([^:]*\):.*/\1/' | xargs)
       read -rp "  飞书 account（回车使用自动检测: $feishu_account）: " input
       [[ -n "$input" ]] && feishu_account="$input"
       set_config_value "$conf" "openclaw_account" "$feishu_account" "channel:feishu-openclaw"
@@ -265,18 +278,30 @@ prompt_openclaw_config() {
 
   # openclaw agent config
   echo ""
-  printf "${BOLD}--- 龙虾 Agent 配置 ---${NC}\n"
-  read -rp "使用子 Agent 还是主 Agent? (推荐子Agent) [sub/main] " agent_ans
-  if [[ "${agent_ans,,}" == "main" ]]; then
-    set_config_value "$conf" "agent_mode" "main" "openclaw"
-    info "使用龙虾主 Agent"
+  printf -- "${BOLD}--- 龙虾 Agent 配置 ---${NC}\n"
+
+  if [[ -n "$agent_override" ]]; then
+    info "使用已有 Agent: $agent_override"
+    set_config_value "$conf" "agent_mode" "existing" "openclaw"
+    set_config_value "$conf" "agent_name" "$agent_override" "openclaw"
+    local workspace
+    workspace=$(openclaw agents list 2>/dev/null | awk "/^- ${agent_override}[ (]/{found=1} found && /Workspace:/{gsub(/^[ \t]*Workspace:[ \t]*/,\"\"); print; exit}")
+    workspace="${workspace:-$HOME/.openclaw/workspace}"
+    generate_workspace_manifest "$workspace" "$agent_override"
+    render_workspace_templates "$workspace"
   else
-    set_config_value "$conf" "agent_mode" "sub" "openclaw"
-    local agent_name="cc-monitor"
-    read -rp "  子 Agent 名称（回车使用 cc-monitor）: " name_input
-    [[ -n "$name_input" ]] && agent_name="$name_input"
-    set_config_value "$conf" "agent_name" "$agent_name" "openclaw"
-    setup_openclaw_subagent "$agent_name"
+    read -rp "使用子 Agent 还是主 Agent? (推荐子Agent) [sub/main] " agent_ans
+    if [[ "${agent_ans,,}" == "main" ]]; then
+      set_config_value "$conf" "agent_mode" "main" "openclaw"
+      info "使用龙虾主 Agent"
+    else
+      set_config_value "$conf" "agent_mode" "sub" "openclaw"
+      local agent_name="cc-monitor"
+      read -rp "  子 Agent 名称（回车使用 cc-monitor）: " name_input
+      [[ -n "$name_input" ]] && agent_name="$name_input"
+      set_config_value "$conf" "agent_name" "$agent_name" "openclaw"
+      setup_openclaw_subagent "$agent_name"
+    fi
   fi
 }
 
@@ -291,13 +316,13 @@ setup_openclaw_subagent() {
 
   if (( agent_count <= 1 )); then
     # Single agent or no agents — use main workspace
-    workspace=$(openclaw agents list 2>/dev/null | grep -A5 "main" | grep -oP 'Workspace:\s*\K.*' | head -1)
+    workspace=$(openclaw agents list 2>/dev/null | awk '/^- main /{found=1} found && /Workspace:/{gsub(/^[ \t]*Workspace:[ \t]*/,""); print; exit}')
     workspace="${workspace:-$HOME/.openclaw/workspace}"
     info "单 Agent 环境，部署到: $workspace"
   else
     # Multiple agents — list them and ask
     echo ""
-    printf "${BOLD}检测到 %d 个 Agent，选择 cc-monitor 代理部署到哪个 workspace:${NC}\n" "$agent_count"
+    printf -- "${BOLD}检测到 %d 个 Agent，选择 cc-monitor 代理部署到哪个 workspace:${NC}\n" "$agent_count"
     openclaw agents list 2>/dev/null | grep -E "^- |Workspace:" | paste - - | while read -r line; do
       echo "  $line"
     done
@@ -310,7 +335,7 @@ setup_openclaw_subagent() {
     fi
   fi
 
-  if openclaw agents list 2>/dev/null | grep -q "$agent_name"; then
+  if openclaw agents list 2>/dev/null | grep -q "^- ${agent_name}[ (]"; then
     info "子 Agent '$agent_name' 已存在，跳过创建"
     generate_workspace_manifest "$workspace" "$agent_name"
     render_workspace_templates "$workspace"
@@ -353,17 +378,13 @@ generate_workspace_manifest() {
 
   mkdir -p "$workspace"
 
-  local channel_id
+  local channel_id="openclaw-weixin"
   # Detect the actual enabled channel: prefer wechat, then feishu-openclaw
-  local wechat_enabled feishu_enabled
-  wechat_enabled=$(config_get_from_file "$CONFIG_DIR/config.conf" "channel:wechat:enabled" "false")
-  feishu_enabled=$(config_get_from_file "$CONFIG_DIR/config.conf" "channel:feishu-openclaw:enabled" "false")
-  if [[ "$wechat_enabled" == "true" ]]; then
-    channel_id=$(config_get_from_file "$CONFIG_DIR/config.conf" "channel:wechat:openclaw_channel" "openclaw-weixin")
-  elif [[ "$feishu_enabled" == "true" ]]; then
-    channel_id=$(config_get_from_file "$CONFIG_DIR/config.conf" "channel:feishu-openclaw:openclaw_channel" "feishu")
-  else
-    channel_id="openclaw-weixin"
+  local conf="$CONFIG_DIR/config.conf"
+  if [[ "$(config_get_from_file "$conf" "channel:wechat:enabled" "false")" == "true" ]]; then
+    channel_id=$(config_get_from_file "$conf" "channel:wechat:openclaw_channel" "openclaw-weixin")
+  elif [[ "$(config_get_from_file "$conf" "channel:feishu-openclaw:enabled" "false")" == "true" ]]; then
+    channel_id=$(config_get_from_file "$conf" "channel:feishu-openclaw:openclaw_channel" "feishu")
   fi
 
   jq -n \
@@ -402,23 +423,14 @@ render_workspace_templates() {
     [agents.md]=AGENTS.md
     [tools.md]=TOOLS.md
     [soul.md]=SOUL.md
-    [identity.md]=IDENTITY.md
-    [user.md]=USER.md
   )
-  local required_files=("agents.md" "tools.md" "soul.md")
-  local optional_files=("identity.md" "user.md")
 
-  for src_name in "${required_files[@]}" "${optional_files[@]}"; do
+  for src_name in "${!tmpl_map[@]}"; do
     local src="$templates_dir/$src_name"
-    local dest_name="${tmpl_map[$src_name]:-$src_name}"
+    local dest_name="${tmpl_map[$src_name]}"
     local dest="$workspace/$dest_name"
 
     [[ ! -f "$src" ]] && continue
-
-    local is_required=false
-    for req in "${required_files[@]}"; do
-      [[ "$src_name" == "$req" ]] && is_required=true && break
-    done
 
     if [[ ! -f "$dest" ]]; then
       cp "$src" "$dest"
@@ -428,33 +440,22 @@ render_workspace_templates() {
 
     # File exists — check managed marker
     if grep -q 'cc-monitor-managed:' "$dest" 2>/dev/null; then
-      if $is_required; then
-        # Required + managed: update if template changed
-        if ! diff -q "$src" "$dest" &>/dev/null; then
-          cp "$src" "$dest"
-          info "Updated: $dest_name (template newer)"
-        fi
+      # Managed file: update if template changed
+      if ! diff -q "$src" "$dest" &>/dev/null; then
+        cp "$src" "$dest"
+        info "Updated: $dest_name (template newer)"
+      fi
+    elif [[ "${INTERACTIVE:-false}" == "true" ]]; then
+      # User-created file: ask in interactive mode
+      read -rp "$dest_name exists (user-customized). Overwrite? [y/N] " ans
+      if [[ "${ans,,}" == "y" ]]; then
+        cp "$src" "$dest"
+        info "Overwritten: $dest_name"
       else
-        # Optional + managed: user may have customized after creation, skip
-        info "Skipped: $dest_name (optional, already deployed)"
+        info "Skipped: $dest_name (user choice)"
       fi
     else
-      # User-created file (no managed marker)
-      if $is_required; then
-        if [[ "${INTERACTIVE:-false}" == "true" ]]; then
-          read -rp "$dest_name exists (user-customized). Overwrite? [y/N] " ans
-          if [[ "${ans,,}" == "y" ]]; then
-            cp "$src" "$dest"
-            info "Overwritten: $dest_name"
-          else
-            info "Skipped: $dest_name (user choice)"
-          fi
-        else
-          info "Skipped: $dest_name (user-customized, non-interactive)"
-        fi
-      else
-        info "Skipped: $dest_name (user-customized, optional)"
-      fi
+      info "Skipped: $dest_name (user-customized, non-interactive)"
     fi
   done
 }
@@ -511,16 +512,12 @@ register_hooks() {
     fi
 
     local entry
+    entry="$(jq -n --arg cmd "$hook_command" '{
+      matcher: "",
+      hooks: [{ type: "command", command: $cmd }]
+    }')"
     if [[ "$event" == "SessionEnd" ]]; then
-      entry="$(jq -n --arg cmd "$hook_command" '{
-        matcher: "",
-        hooks: [{ type: "command", command: $cmd, timeout: 5000 }]
-      }')"
-    else
-      entry="$(jq -n --arg cmd "$hook_command" '{
-        matcher: "",
-        hooks: [{ type: "command", command: $cmd }]
-      }')"
+      entry="$(echo "$entry" | jq '.hooks[0].timeout = 5000')"
     fi
 
     local tmp
@@ -589,49 +586,42 @@ register_codex_hook() {
 }
 
 # ---------------------------------------------------------------------------
+# uninstall helpers
+# ---------------------------------------------------------------------------
+# Remove all hook entries matching a command from specified events
+remove_hooks_for_command() {
+  local cmd="$1"
+  shift
+  local events=("$@")
+
+  for event in "${events[@]}"; do
+    local existing
+    existing="$(jq -r --arg event "$event" --arg cmd "$cmd" '
+      .hooks[$event] // [] | map(select(.hooks[]?.command == $cmd)) | length
+    ' "$SETTINGS_FILE" 2>/dev/null || echo "0")"
+    if [[ "$existing" != "0" ]]; then
+      local tmp
+      tmp="$(mktemp)"
+      jq --arg event "$event" --arg cmd "$cmd" '
+        .hooks[$event] |= ((. // []) | map(
+          .hooks |= map(select(.command != $cmd))
+        ) | map(select((.hooks | length) > 0)))
+      ' "$SETTINGS_FILE" > "$tmp" && mv "$tmp" "$SETTINGS_FILE" || { rm -f "$tmp"; }
+      info "Removed hook for $event"
+    fi
+  done
+}
+
+# ---------------------------------------------------------------------------
 # uninstall
 # ---------------------------------------------------------------------------
 do_uninstall() {
-  printf "\n${BOLD}=== Uninstall cc-monitor ===${NC}\n\n"
-  local hook_command="bash $HOOK_SCRIPT hook"
+  printf -- "\n${BOLD}=== Uninstall cc-monitor ===${NC}\n\n"
 
   if [[ -f "$SETTINGS_FILE" ]]; then
     local hook_events=("Stop" "StopFailure" "PermissionRequest" "SessionEnd")
-    for event in "${hook_events[@]}"; do
-      local existing
-      existing="$(jq -r --arg event "$event" --arg cmd "$hook_command" '
-        .hooks[$event] // [] | map(select(.hooks[]?.command == $cmd)) | length
-      ' "$SETTINGS_FILE" 2>/dev/null || echo "0")"
-      if [[ "$existing" != "0" ]]; then
-        local tmp
-        tmp="$(mktemp)"
-        jq --arg event "$event" --arg cmd "$hook_command" '
-          .hooks[$event] |= ((. // []) | map(
-            .hooks |= map(select(.command != $cmd))
-          ) | map(select((.hooks | length) > 0)))
-        ' "$SETTINGS_FILE" > "$tmp" && mv "$tmp" "$SETTINGS_FILE" || { rm -f "$tmp"; }
-        info "Removed hook for $event"
-      fi
-    done
-    # Also remove codex hook entries
-    local codex_command="bash $HOOK_SCRIPT codex"
-    local codex_events=("Stop")
-    for event in "${codex_events[@]}"; do
-      local existing
-      existing="$(jq -r --arg event "$event" --arg cmd "$codex_command" '
-        .hooks[$event] // [] | map(select(.hooks[]?.command == $cmd)) | length
-      ' "$SETTINGS_FILE" 2>/dev/null || echo "0")"
-      if [[ "$existing" != "0" ]]; then
-        local tmp
-        tmp="$(mktemp)"
-        jq --arg event "$event" --arg cmd "$codex_command" '
-          .hooks[$event] |= ((. // []) | map(
-            .hooks |= map(select(.command != $cmd))
-          ) | map(select((.hooks | length) > 0)))
-        ' "$SETTINGS_FILE" > "$tmp" && mv "$tmp" "$SETTINGS_FILE" || { rm -f "$tmp"; }
-        info "Removed codex hook for $event"
-      fi
-    done
+    remove_hooks_for_command "bash $HOOK_SCRIPT hook" "${hook_events[@]}"
+    remove_hooks_for_command "bash $HOOK_SCRIPT codex" "Stop"
 
     local tmp
     tmp="$(mktemp)"
@@ -664,7 +654,7 @@ do_uninstall() {
 # Main
 # ---------------------------------------------------------------------------
 main() {
-  local mode="" interactive=false enable_watchdog=false enable_codex=false do_uninstall_flag=false
+  local mode="" interactive=false enable_watchdog=false enable_codex=false do_uninstall_flag=false agent_override=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -672,6 +662,11 @@ main() {
         mode="${2:-}"
         [[ -z "$mode" ]] && die "--mode requires a value (direct|openclaw)"
         [[ "$mode" != "direct" && "$mode" != "openclaw" ]] && die "Unknown mode: $mode"
+        shift 2
+        ;;
+      --agent)
+        agent_override="${2:-}"
+        [[ -z "$agent_override" ]] && die "--agent requires a value"
         shift 2
         ;;
       --interactive)
@@ -708,7 +703,7 @@ main() {
   # interactive mode selection
   if $interactive && [[ -z "$mode" ]]; then
     echo ""
-    printf "${BOLD}选择安装模式:${NC}\n"
+    printf -- "${BOLD}选择安装模式:${NC}\n"
     echo "  1) 直连模式 — 钉钉 webhook，零依赖，只有通知"
     echo "  2) 龙虾模式 — 微信/飞书通过 OpenClaw，支持远程输入"
     echo ""
@@ -729,6 +724,7 @@ main() {
   detect_platform
   check_dependencies
   generate_config "$mode" "$interactive"
+  migrate_config
 
   # Warn if no channels enabled in non-interactive mode
   if ! $interactive; then
@@ -754,6 +750,18 @@ main() {
   fi
 
   register_hooks
+
+  # Upgrade: update workspace templates if manifest exists
+  if [[ -f "$CONFIG_DIR/config.conf" ]]; then
+    local existing_manifest
+    existing_manifest=$(find "$HOME/.openclaw" -name "cc-monitor.workspace.json" -maxdepth 3 2>/dev/null | head -1)
+    if [[ -n "$existing_manifest" ]]; then
+      local ws_dir
+      ws_dir=$(dirname "$existing_manifest")
+      render_workspace_templates "$ws_dir"
+    fi
+  fi
+
   register_cron "$enable_watchdog"
 
   if $enable_codex; then
