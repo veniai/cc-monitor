@@ -4,7 +4,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License">
-  <img src="https://img.shields.io/badge/version-1.2.2-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.2.3-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/Claude_Code-Supported-blue.svg" alt="Claude Code">
   <img src="https://img.shields.io/badge/Codex_CLI-Supported-blue.svg" alt="Codex CLI">
 </p>
