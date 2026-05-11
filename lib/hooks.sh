@@ -95,33 +95,34 @@ handle_stop_failure() {
     return 0
   fi
 
-  # Rate limit: check for 5-hour quota first, then time-based episode
-  if [[ "$HOOK_REASON" == "rate_limit" ]]; then
-    # Check if this is actually a 5-hour quota limit (Claude Code reports it as rate_limit)
-    local existing_quota
-    existing_quota=$(marker_read "$TMUX_SESSION" "quota_resets_at")
-    if [[ -z "$existing_quota" || "$existing_quota" == "null" || "$existing_quota" == "" ]]; then
-      local pane_text reset_match reset_ts
-      pane_text=$(capture_pane "$TMUX_PANE")
-      reset_match=$(echo "$pane_text" | grep -oP '\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?= 重置)' | tail -1)
-      if [[ -n "$reset_match" ]]; then
-        reset_ts=$(date -d "$reset_match" +%s 2>/dev/null) || reset_ts=0
-        if (( reset_ts > 0 )); then
-          marker_update "$TMUX_SESSION" ".quota_resets_at = $reset_ts | del(.rate_limit_since) | .auto_resume_count = 0 | .screen_md5_stable_count = 0"
-          local reset_display
-          reset_display=$(date -d "@$reset_ts" '+%Y-%m-%d %H:%M:%S')
-          local msg
-          printf -v msg '**[Monitor]** %s 5小时限额已满，%s 后自动恢复（最晚约5分钟内）' "$TMUX_SESSION" "$reset_display"
-          notify_user "$msg" "${TMUX_SESSION} ⏸ 限额满，${reset_display} 恢复"
-          return 0
-        fi
+  # --- 5-hour quota detection (shared by rate_limit and other errors) ---
+  # Claude Code reports 5-hour quota as rate_limit, so we must check screen content.
+  # Once detected, suppress all further notifications via quota_resets_at marker.
+  local _quota_val
+  _quota_val=$(marker_read "$TMUX_SESSION" "quota_resets_at")
+  if [[ -z "$_quota_val" || "$_quota_val" == "null" || "$_quota_val" == "" ]]; then
+    local _pane_txt _reset_match _reset_ts
+    _pane_txt=$(capture_pane "$TMUX_PANE")
+    _reset_match=$(echo "$_pane_txt" | grep -oP '\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?= 重置)' | tail -1)
+    if [[ -n "$_reset_match" ]]; then
+      _reset_ts=$(date -d "$_reset_match" +%s 2>/dev/null) || _reset_ts=0
+      if (( _reset_ts > 0 )); then
+        marker_update "$TMUX_SESSION" ".quota_resets_at = $_reset_ts | del(.rate_limit_since) | .auto_resume_count = 0 | .screen_md5_stable_count = 0"
+        local _reset_display
+        _reset_display=$(date -d "@$_reset_ts" '+%Y-%m-%d %H:%M:%S')
+        local _msg
+        printf -v _msg '**[Monitor]** %s 5小时限额已满，%s 后自动恢复（最晚约5分钟内）' "$TMUX_SESSION" "$_reset_display"
+        notify_user "$_msg" "${TMUX_SESSION} ⏸ 限额满，${_reset_display} 恢复"
+        return 0
       fi
-    else
-      # Already detected as quota, suppress duplicate
-      return 0
     fi
+  else
+    # Already detected as quota, suppress all further StopFailure
+    return 0
+  fi
 
-    # Not quota — handle as transient rate_limit with 5-min episode
+  # Rate limit (transient): time-based episode — silent for 5 min, then recover
+  if [[ "$HOOK_REASON" == "rate_limit" ]]; then
     local rl_since now elapsed
     rl_since=$(marker_read "$TMUX_SESSION" "rate_limit_since") || rl_since=0
     now=$(date +%s)
@@ -140,30 +141,6 @@ handle_stop_failure() {
       "${TMUX_SESSION} ⏸ 限流>5min，恢复中"
     recover_session "$TMUX_PANE"
     return 0
-  fi
-
-  # --- Quota limit detection: suppress retry until reset time ---
-  # Skip if already notified (prevents duplicate notifications from repeated StopFailure)
-  local existing_quota
-  existing_quota=$(marker_read "$TMUX_SESSION" "quota_resets_at")
-  if [[ -n "$existing_quota" && "$existing_quota" != "null" && "$existing_quota" != "" ]]; then
-    return 0
-  fi
-
-  local pane_text reset_match reset_ts
-  pane_text=$(capture_pane "$TMUX_PANE")
-  reset_match=$(echo "$pane_text" | grep -oP '\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?= 重置)' | tail -1)
-  if [[ -n "$reset_match" ]]; then
-    reset_ts=$(date -d "$reset_match" +%s 2>/dev/null) || reset_ts=0
-    if (( reset_ts > 0 )); then
-      marker_update "$TMUX_SESSION" ".quota_resets_at = $reset_ts | .auto_resume_count = 0 | .screen_md5_stable_count = 0"
-      local reset_display
-      reset_display=$(date -d "@$reset_ts" '+%Y-%m-%d %H:%M:%S')
-      local msg
-      printf -v msg '**[Monitor]** %s 5小时限额已满，%s 后自动恢复（最晚约5分钟内）' "$TMUX_SESSION" "$reset_display"
-      notify_user "$msg" "${TMUX_SESSION} ⏸ 限额满，${reset_display} 恢复"
-      return 0
-    fi
   fi
 
   if ! is_claude_alive "$TMUX_PANE"; then
