@@ -83,7 +83,7 @@ handle_stop() {
   local msg
   printf -v msg '**[Monitor]** %s 任务完成:\n\n%s' "$TMUX_SESSION" "$summary"
   notify_user "$msg" "${TMUX_SESSION} ✓ 完成"
-  marker_update "$TMUX_SESSION" '.stop_seen = true | del(.quota_resets_at)' 2>/dev/null || true
+  marker_update "$TMUX_SESSION" '.stop_seen = true | del(.quota_resets_at, .rate_limit_since)' 2>/dev/null || true
 }
 
 handle_stop_failure() {
@@ -95,11 +95,25 @@ handle_stop_failure() {
     return 0
   fi
 
-  # Rate limit: notify only, skip recovery — Claude Code retries on its own
+  # Rate limit: silent for 5 min, then recover and reset episode
   if [[ "$HOOK_REASON" == "rate_limit" ]]; then
-    local msg
-    printf -v msg '**[Monitor]** %s 触发 API 限流，等待自动重试' "$TMUX_SESSION"
-    notify_user "$msg" "${TMUX_SESSION} ⏸ 限流"
+    local rl_since now elapsed
+    rl_since=$(marker_read "$TMUX_SESSION" "rate_limit_since") || rl_since=0
+    now=$(date +%s)
+    if [[ -z "$rl_since" || "$rl_since" == "null" || "$rl_since" == "0" ]]; then
+      marker_update "$TMUX_SESSION" ".rate_limit_since = $now"
+      return 0
+    fi
+    elapsed=$(( now - rl_since ))
+    if (( elapsed < 300 )); then
+      return 0
+    fi
+    # >= 5 min: recover, notify, reset episode
+    marker_update "$TMUX_SESSION" "del(.rate_limit_since)"
+    notify_user \
+      "**[Monitor]** ${TMUX_SESSION} 限流持续超过5分钟，尝试自动恢复" \
+      "${TMUX_SESSION} ⏸ 限流>5min，恢复中"
+    recover_session "$TMUX_PANE"
     return 0
   fi
 
