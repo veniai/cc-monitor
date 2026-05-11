@@ -175,11 +175,20 @@ handle_stop_failure() {
   sleep 2
   after=$(capture_pane "$TMUX_PANE" -S -5 | md5sum | awk '{print $1}')
 
-  if [[ "$before" == "$after" ]]; then
+  if [[ -z "$before" || -z "$after" ]]; then
+    # Pane disappeared — can't verify recovery
+    notify_user \
+      "**[Monitor]** ${TMUX_SESSION} 进程在恢复期间退出，请手动检查" \
+      "${TMUX_SESSION} ✗ 进程退出"
+    marker_cleanup "$TMUX_SESSION"
+  elif [[ "$before" == "$after" ]]; then
     notify_user \
       "**[Monitor]** ${TMUX_SESSION} 自动恢复发送失败，请手动检查" \
       "${TMUX_SESSION} ✗ 发送失败"
     marker_cleanup "$TMUX_SESSION"
+  else
+    # Recovery successful — reset counter
+    marker_update "$TMUX_SESSION" ".auto_resume_count = 0"
   fi
 }
 

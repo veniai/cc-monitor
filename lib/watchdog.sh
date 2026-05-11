@@ -24,6 +24,11 @@ handle_watchdog() {
     pending_resp=$(jq -r '.pending_response // empty' "$marker" 2>/dev/null)
     [[ -n "$pending_resp" ]] && continue
 
+    # Skip sessions in rate_limit episode (hooks.sh managing recovery)
+    local rl_since
+    rl_since=$(jq -r '.rate_limit_since // empty' "$marker" 2>/dev/null)
+    [[ -n "$rl_since" ]] && continue
+
     # Only capture visible screen — scrollback may contain stale spinners
     pane_text=$(capture_pane "$pane_id")
 
