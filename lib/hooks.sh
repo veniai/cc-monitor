@@ -95,6 +95,14 @@ handle_stop_failure() {
     return 0
   fi
 
+  # Rate limit: notify only, skip recovery — Claude Code retries on its own
+  if [[ "$HOOK_REASON" == "rate_limit" ]]; then
+    local msg
+    printf -v msg '**[Monitor]** %s 触发 API 限流，等待自动重试' "$TMUX_SESSION"
+    notify_user "$msg" "${TMUX_SESSION} ⏸ 限流"
+    return 0
+  fi
+
   # --- Quota limit detection: suppress retry until reset time ---
   # Skip if already notified (prevents duplicate notifications from repeated StopFailure)
   local existing_quota
