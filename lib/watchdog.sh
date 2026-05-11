@@ -19,6 +19,11 @@ handle_watchdog() {
     local marker
     marker=$(marker_path "$session")
 
+    # Skip sessions waiting for AskUserQuestion IM response
+    local pending_resp
+    pending_resp=$(jq -r '.pending_response // empty' "$marker" 2>/dev/null)
+    [[ -n "$pending_resp" ]] && continue
+
     # Only capture visible screen — scrollback may contain stale spinners
     pane_text=$(capture_pane "$pane_id")
 
