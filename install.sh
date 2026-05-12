@@ -37,6 +37,7 @@ Usage:
 Modes:
   --mode direct             Direct mode: webhook to DingTalk
   --mode openclaw           OpenClaw mode: WeChat/Feishu via lobster, DingTalk webhook
+  --mode hermes            Hermes mode: Feishu via REST API, remote input via Hermes agent
 
 Options:
   --interactive             Prompt for each configuration value
@@ -54,6 +55,9 @@ Examples:
 
   # OpenClaw mode, non-interactive
   install.sh --mode openclaw --enable-watchdog
+
+  # Hermes mode, non-interactive
+  install.sh --mode hermes --enable-watchdog
 
   # Direct mode with Codex CLI support
   install.sh --mode direct --enable-codex
@@ -164,6 +168,66 @@ prompt_direct_config() {
     [[ -n "$secret" ]] && set_config_value "$conf" "secret" "$secret" "channel:dingtalk"
   fi
 
+}
+
+# ---------------------------------------------------------------------------
+# hermes mode config
+# ---------------------------------------------------------------------------
+prompt_hermes_config() {
+  local conf="$CONFIG_DIR/config.conf"
+  echo ""
+  printf -- "${BOLD}--- Hermes 模式配置 ---${NC}\n"
+  printf "通过飞书 REST API 发送通知，配合 Hermes agent 支持远程输入\n\n"
+
+  # Feishu app credentials
+  set_config_value "$conf" "enabled" "true" "channel:feishu-hermes"
+
+  read -rp "飞书 App ID (如 cli_xxxxx): " app_id
+  set_config_value "$conf" "app_id" "$app_id" "channel:feishu-hermes"
+
+  read -rp "飞书 App Secret: " app_secret
+  set_config_value "$conf" "app_secret" "$app_secret" "channel:feishu-hermes"
+
+  read -rp "飞书 Receive ID (如 ou_xxxxx 或 oc_xxxxx): " receive_id
+  set_config_value "$conf" "receive_id" "$receive_id" "channel:feishu-hermes"
+
+  # Auto-detect receive_id_type
+  local receive_id_type="open_id"
+  if [[ "$receive_id" == oc_* ]]; then
+    receive_id_type="chat_id"
+  fi
+  read -rp "Receive ID 类型（回车使用自动检测: $receive_id_type）: " type_input
+  [[ -n "$type_input" ]] && receive_id_type="$type_input"
+  set_config_value "$conf" "receive_id_type" "$receive_id_type" "channel:feishu-hermes"
+
+  info "飞书通道已配置 (receive_id_type=$receive_id_type)"
+
+  # DingTalk (optional)
+  echo ""
+  read -rp "启用钉钉（强通知，手表/手环）? [Y/n] " ans
+  if [[ "${ans,,}" != "n" ]]; then
+    set_config_value "$conf" "enabled" "true" "channel:dingtalk"
+    read -rp "  钉钉 webhook URL: " webhook
+    set_config_value "$conf" "webhook" "$webhook" "channel:dingtalk"
+    read -rp "  钉钉 secret（可选，回车跳过）: " secret
+    [[ -n "$secret" ]] && set_config_value "$conf" "secret" "$secret" "channel:dingtalk"
+  fi
+
+  # Hermes workspace
+  echo ""
+  printf -- "${BOLD}--- Hermes Workspace ---${NC}\n"
+
+  local profile="dev"
+  read -rp "Hermes profile 名称（回车使用 dev）: " profile_input
+  [[ -n "$profile_input" ]] && profile="$profile_input"
+  local hermes_workspace="$HOME/.hermes/profiles/$profile/workspace"
+  if [[ ! -d "$hermes_workspace" ]]; then
+    warn "$hermes_workspace 不存在，将创建"
+    mkdir -p "$hermes_workspace"
+  fi
+
+  generate_workspace_manifest "$hermes_workspace" "$profile"
+  render_workspace_templates "$hermes_workspace"
 }
 
 # ---------------------------------------------------------------------------
@@ -364,6 +428,10 @@ generate_workspace_manifest() {
     channel_id=$(config_get_from_file "$CONFIG_DIR/config.conf" "channel:feishu-openclaw:openclaw_channel" "feishu")
   else
     channel_id="openclaw-weixin"
+  fi
+
+  if [[ "$(config_get_from_file "$conf" "channel:feishu-hermes:enabled" "false")" == "true" ]]; then
+    channel_id="feishu-hermes"
   fi
 
   jq -n \
@@ -670,8 +738,8 @@ main() {
     case "$1" in
       --mode)
         mode="${2:-}"
-        [[ -z "$mode" ]] && die "--mode requires a value (direct|openclaw)"
-        [[ "$mode" != "direct" && "$mode" != "openclaw" ]] && die "Unknown mode: $mode"
+        [[ -z "$mode" ]] && die "--mode requires a value (direct|openclaw|hermes)"
+        [[ "$mode" != "direct" && "$mode" != "openclaw" && "$mode" != "hermes" ]] && die "Unknown mode: $mode (use direct, openclaw, or hermes)"
         shift 2
         ;;
       --interactive)
@@ -708,14 +776,16 @@ main() {
   # interactive mode selection
   if $interactive && [[ -z "$mode" ]]; then
     echo ""
-    printf "${BOLD}选择安装模式:${NC}\n"
+    printf -- "${BOLD}选择安装模式:${NC}\n"
     echo "  1) 直连模式 — 钉钉 webhook，零依赖，只有通知"
     echo "  2) 龙虾模式 — 微信/飞书通过 OpenClaw，支持远程输入"
+    echo "  3) Hermes 模式 — 飞书 REST API 直连，支持远程输入"
     echo ""
-    read -rp "请选择 [1/2]: " mode_choice
+    read -rp "请选择 [1/2/3]: " mode_choice
     case "$mode_choice" in
       1) mode="direct" ;;
       2) mode="openclaw" ;;
+      3) mode="hermes" ;;
       *) die "无效选择" ;;
     esac
   fi
@@ -745,6 +815,8 @@ main() {
   if $interactive; then
     if [[ "$mode" == "direct" ]]; then
       prompt_direct_config
+    elif [[ "$mode" == "hermes" ]]; then
+      INTERACTIVE=true prompt_hermes_config
     else
       INTERACTIVE=true prompt_openclaw_config
     fi
@@ -768,6 +840,9 @@ main() {
   if [[ "$mode" == "openclaw" ]]; then
     info ""
     info "远程输入: 在微信/飞书中直接发消息给龙虾即可控制 Claude Code"
+  elif [[ "$mode" == "hermes" ]]; then
+    info ""
+    info "远程输入: 在飞书中直接发消息给 Hermes agent 即可控制 Claude Code"
   fi
 }
 
