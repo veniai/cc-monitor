@@ -43,11 +43,12 @@ Commands:
 
 Setup:
   1. Copy config.example.conf to ~/.config/cc-monitor/config.conf
-  2. Edit config.conf — choose mode (direct or openclaw)
+  2. Edit config.conf — choose mode (direct, openclaw, or hermes)
   3. Run: ./install.sh --interactive
 
 Remote input (bidirectional IM):
-  Use OpenClaw (https://github.com/veniai/openclaw)
+  OpenClaw: https://github.com/veniai/openclaw
+  Hermes mode: Feishu REST API + Hermes agent workspace
 USAGE
     ;;
 esac
