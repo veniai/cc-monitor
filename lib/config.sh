@@ -143,8 +143,26 @@ config_validate() {
                 ((errors++))
             fi
         fi
+    elif [[ "$mode" == "hermes" ]]; then
+        enabled="$(config_get "channel:feishu-hermes:enabled" "false")"
+        if [[ "$enabled" == "true" ]]; then
+            if [[ -z "$(config_get "channel:feishu-hermes:app_id" "")" ]]; then
+                echo "[WARN] channel:feishu-hermes enabled but 'app_id' is empty" >&2
+                ((errors++))
+            fi
+            if [[ -z "$(config_get "channel:feishu-hermes:app_secret" "")" ]]; then
+                echo "[WARN] channel:feishu-hermes enabled but 'app_secret' is empty" >&2
+                ((errors++))
+            fi
+            if [[ -z "$(config_get "channel:feishu-hermes:receive_id" "")" ]]; then
+                echo "[WARN] channel:feishu-hermes enabled but 'receive_id' is empty" >&2
+                ((errors++))
+            fi
+        fi
+    elif [[ "$mode" == "direct" ]]; then
+        : # direct mode: dingtalk validation already done above
     else
-        echo "[ERROR] Unknown mode '$mode' — must be 'direct' or 'openclaw'" >&2
+        echo "[ERROR] Unknown mode '$mode' — must be 'direct', 'openclaw', or 'hermes'" >&2
         ((errors++))
     fi
 

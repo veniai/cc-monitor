@@ -8,10 +8,12 @@
 - `ccMonitorDir` — cc-monitor 安装目录
 - `configPath` — 配置文件路径
 - `markerDir` — marker 文件目录
-- `channelId` — OpenClaw 通道（如 `openclaw-weixin`）
+- `channelId` — 通知通道标识（如 `openclaw-weixin`、`feishu-hermes`）
 - `agentName` — agent 名称
 
-通道相关值（target, account）从 `configPath` 配置文件读取，看对应 section：`[channel:wechat]` 或 `[channel:feishu-openclaw]`。
+通道相关值从 `configPath` 配置文件读取。根据 `channelId`：
+- `openclaw-weixin` / `feishu` → 看 `[channel:wechat]` 或 `[channel:feishu-openclaw]`
+- `feishu-hermes` → 看 `[channel:feishu-hermes]`（app_id, receive_id 等）
 
 ## tmux 铁律
 
@@ -35,8 +37,11 @@ tmux capture-pane -t <session> -p | grep -v '^[[:space:]]*$' | tail -5
 mkdir -p {markerDir}
 GEN=$(jq -r '.generation // 0' {markerDir}/<session>.json 2>/dev/null || echo 0)
 cat > {markerDir}/<session>.json <<EOF
-{"target":"<从config读对应channel的openclaw_target>","created_at":$(date +%s),"auto_resume_count":0,"last_retry_at":0,"generation":$((GEN + 1))}
+{"target":"<见下方 target 取值>","created_at":$(date +%s),"auto_resume_count":0,"last_retry_at":0,"generation":$((GEN + 1))}
 EOF
+target 字段取值：
+- OpenClaw 模式：`<从config读对应channel的openclaw_target>`（如 `feishu:user:ou_xxx`）
+- Hermes 模式：`feishu-hermes`（cc-monitor 直接从 config 读 receive_id）
 tmux set-buffer "消息内容"
 tmux paste-buffer -t <session>
 sleep 1

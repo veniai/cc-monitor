@@ -15,6 +15,7 @@ git clone https://github.com/veniai/cc-monitor.git ~/cc-monitor
 问用户：
 - **直连模式**：只需飞书/钉钉 webhook，零依赖。只有通知，没有远程输入。
 - **龙虾模式**：通过 OpenClaw 连微信/飞书，支持远程输入。需要安装 openclaw。
+- **Hermes 模式**：通过飞书 REST API 发飞书通知，配合 Hermes Agent 支持远程输入。需要飞书应用凭据。
 
 ### 3. 创建配置文件
 
@@ -28,6 +29,7 @@ chmod 0600 ~/.config/cc-monitor/config.conf
 
 - 直连模式：设置 `mode=direct`，填入飞书/钉钉 webhook URL
 - 龙虾模式：设置 `mode=openclaw`，检测 openclaw 配置，填入微信/飞书 target
+- Hermes 模式：设置 `mode=hermes`，填入 `app_id`、`app_secret`、`receive_id`
 
 ### 4. 注册 Claude Code Hooks
 
@@ -87,6 +89,13 @@ chmod 0600 ~/.config/cc-monitor/config.conf
 - `USER.md` — 用户信息模板（仅首次创建，不覆盖用户已有）
 
 每个文件顶部有 `<!-- cc-monitor-managed -->` 标记。安装器据此区分 cc-monitor 管理的文件和用户自定义内容。
+
+### 6c. Hermes 模式：生成工作区模板
+
+如果用户选了 Hermes 模式：
+
+1. 确认 Hermes profile 存在：`ls ~/.hermes/profiles/dev/workspace/`
+2. 运行 `install.sh --mode hermes --interactive`，自动生成 manifest 和模板到 workspace
 
 ### 7. 验证
 
