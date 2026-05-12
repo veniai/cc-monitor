@@ -30,7 +30,7 @@
 >
 > cc-monitor 解决这些问题。装一次，跑在 tmux 里的 AI 工具每一步都在你掌控中。支持 Claude Code 和 Codex CLI，理论上任何 tmux 中的 CLI 工具都可以用 Watchdog 监控。
 >
-> **两种模式**：直连模式填 webhook URL 就能用（钉钉强通知）；龙虾模式通过 [OpenClaw（龙虾）](https://github.com/veniai/openclaw) 连接微信/飞书，支持手机远程输入。
+> **三种模式**：直连模式填 webhook URL 就能用（钉钉强通知）；龙虾模式通过 [OpenClaw（龙虾）](https://github.com/veniai/openclaw) 连接微信/飞书，支持手机远程输入；Hermes 模式通过飞书 REST API 直连发飞书通知，配合 [Hermes Agent](https://github.com/NousResearch/hermes-agent) 实现远程输入。
 
 ## 快速体验
 
@@ -58,6 +58,7 @@ cd ~/cc-monitor
 # 或指定模式
 ./install.sh --mode direct --enable-watchdog      # 直连模式（零依赖）
 ./install.sh --mode openclaw --enable-watchdog     # 龙虾模式（微信远程输入）
+./install.sh --mode hermes --enable-watchdog      # Hermes 模式（飞书 REST API）
 ```
 
 </details>
@@ -83,6 +84,7 @@ cd ~/cc-monitor
 | 钉钉 | 直连 | 强通知（手表/手环震动） |
 | 微信 | 龙虾 | IM 通知 + 远程输入 |
 | 飞书 | 龙虾 | IM 通知 + 远程输入 |
+| 飞书 | Hermes | IM 通知 + 远程输入（REST API 直连） |
 
 > 钉钉始终走 webhook 直连——它是专用强通知通道，发短消息到手表，手腕一震就知道任务完成。微信/飞书是日常聊天工具，拿来震手腕会太吵。
 
@@ -178,6 +180,7 @@ cc-monitor.sh           # 唯一入口
 ├── channels/           # 通知渠道插件
 │   ├── dingtalk.sh     # 钉钉 webhook（强通知）
 │   ├── feishu-openclaw.sh  # 飞书 openclaw（龙虾模式）
+│   ├── feishu-hermes.sh    # 飞书 REST API（Hermes 模式）
 │   ├── wechat.sh       # 微信 openclaw（龙虾模式）
 │   └── _template.sh    # 新渠道模板
 ├── templates/          # OpenClaw workspace 模板
