@@ -25,23 +25,11 @@
 - 不改变当前 active session
 - 回复 `NO_REPLY`
 
-### 2. 引用 `[Monitor]` 通知回复
+### 2. 回复 `[Monitor]` 通知
 
-- 从引用内容提取 `[Monitor] <session>` 里的 session 名
-- **先检查 marker 里有没有 `pending_response`**：
-  ```bash
-  jq -r '.pending_response // empty' {markerDir}/<session>.json
-  ```
-- **如果有 pending_response**（用户在回答 AskUserQuestion 提问）：
-  - 直接把用户回复的原始文字写入 marker（必须用 mktemp 避免并发写冲突）：
-    ```bash
-    tmp="$(mktemp {markerDir}/<session>.json.XXXXXX)" && jq '.pending_response.response = "用户的原始回复"' {markerDir}/<session>.json > "$tmp" && mv "$tmp" {markerDir}/<session>.json
-    ```
-  - 后台进程会自动粘贴到 AskUserQuestion 的文本输入框
-  - 回复 `NO_REPLY`
-- **没有 pending_response**（普通回复）：
-  - 写 marker，转发消息到该 session
-  - 不改变当前 active session
+- Hermes 模式下通知回复不可靠，用户应使用 `发送给 X ...` 替代
+- **收到带 `[Replying to: "...**[Monitor]** <session>..."]` 前缀的消息时**：
+  - 提示用户：`请用「发送给 <session> 消息内容」格式回复`
   - 回复 `NO_REPLY`
 
 ### 3. `切到 X`
