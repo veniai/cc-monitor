@@ -44,7 +44,7 @@ _get_feishu_token() {
 _feishu_send_message() {
   local token="$1" receive_id="$2" receive_id_type="$3" content="$4"
   local escaped
-  escaped=$(printf '%s' "$content" | jq -Rs .)
+  escaped=$(jq -Rs . <<< "$content" | jq -s '{text: .[0]} | tostring')
   http_proxy= https_proxy= curl -s -X POST \
     "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=$receive_id_type" \
     -H "Authorization: Bearer $token" \
