@@ -30,23 +30,25 @@ channel_send() {
   local header_title
   header_title="${short_msg:-$session_name}"
 
-  # Build interactive card JSON
+  # Build interactive card JSON — auto-convert pipe tables via shared converter
+  local converter="/home/claw/.hermes/scripts/markdown_to_card.py"
   local card_json
-  card_json=$(jq -n \
-    --arg title "$header_title" \
-    --arg color "$color" \
-    --arg body "$full_msg" \
-    --arg session "$session_name" \
-    '{
-      config: { wide_screen_mode: true },
-      header: {
-        title: { tag: "plain_text", content: $title },
-        template: $color
-      },
-      elements: [
-        { tag: "markdown", content: "\($body)\n\n📌 \($session)" }
-      ]
-    }')
+  if [[ -f "$converter" ]]; then
+    local body_with_tag
+    body_with_tag="${full_msg}"$'\n\n'"📌 ${session_name}"
+    card_json=$(python3 "$converter" --header "$header_title" --header-color "$color" <<< "$body_with_tag")
+  else
+    card_json=$(jq -n \
+      --arg title "$header_title" \
+      --arg color "$color" \
+      --arg body "$full_msg" \
+      --arg session "$session_name" \
+      '{
+        config: { wide_screen_mode: true, style: { text_size: { content: { default: "large", pc: "large", mobile: "large" } } } },
+        header: { title: { tag: "plain_text", content: $title }, template: $color },
+        elements: [{ tag: "markdown", content: "\($body)\n\n📌 \($session)", text_size: "content" }]
+      }')
+  fi
 
   local feishu_cli
   feishu_cli=$(command -v feishu-cli 2>/dev/null) || true
