@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/config.sh" 2>/dev/null
 source "$SCRIPT_DIR/../lib/tmux.sh" 2>/dev/null
 
-SPINNER_REGEX='^[·✢✳✶✻✽*].{0,80}…\s*\(\d+[hms]'
+SPINNER_REGEX='^[·✢✳✶✻✽*].{0,200}…\s*\(\d+[hms]'
 
 pass=0
 fail=0
@@ -42,6 +42,7 @@ assert_match "minutes only" '✳ Testing… (12m 5s)'
 assert_match "asterisk icon" '* Building… (3m 12s)'
 assert_match "token no decimal" '✻ Processing… (5m 1s · ↓ 1500 tokens)'
 assert_match "long description" '✶ Implementing authentication module with OAuth2… (8m 45s)'
+assert_match "long skill name 87chars" '✶ superpowers:subagent-driven-development Skill 做 rag-ui-scroll-and-query-contract 实施… (9h 29m 2s · ↓ 4.9k tokens)'
 assert_match "h only" '✽ Waiting… (1h 0s)'
 
 # Non-spinners — should NOT match

@@ -33,7 +33,7 @@ handle_watchdog() {
     pane_text=$(capture_pane "$pane_id")
 
     # Match CC spinner: exact 7 icons [·✢✳✶✻✽*] + verb + … + (time
-    spinner_line=$(echo "$pane_text" | grep -P '^[·✢✳✶✻✽*].{0,80}…\s*\(\d+[hms]' | tail -1)
+    spinner_line=$(echo "$pane_text" | grep -P '^[·✢✳✶✻✽*].{0,200}…\s*\(\d+[hms]' | tail -1)
     token_raw=$(echo "$spinner_line" | grep -oP '[\d.]+[kK]?(?=\s*tokens?)' | tail -1)
 
     now=$(date +%s)
@@ -130,7 +130,7 @@ handle_watchdog() {
       # Strip dynamic UI elements before hashing:
       # - Spinner lines (animated icons ·✢✳✶✻✽*)
       # - Agent expand/collapse toggles (●/spaces)
-      screen_md5=$(printf '%s' "$pane_text" | grep -vP '^[·✢✳✶✻✽*]' | grep -vP '^\s*(●|  )Agent\(' | md5sum | awk '{print $1}')
+      screen_md5=$(printf '%s' "$pane_text" | grep -vP '^[·✢✳✶✻✽*]' | grep -vP '^\s*(●|  )Agent\(' | grep -vP '^\s*◯' | md5sum | awk '{print $1}')
       prev_md5=$(marker_read "$session" "screen_md5") || prev_md5=""
 
       if [[ "$screen_md5" == "$prev_md5" ]]; then
