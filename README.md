@@ -4,7 +4,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License">
-  <img src="https://img.shields.io/badge/version-1.2.4-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.2.5-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/Claude_Code-Supported-blue.svg" alt="Claude Code">
   <img src="https://img.shields.io/badge/Codex_CLI-Supported-blue.svg" alt="Codex CLI">
 </p>
@@ -84,7 +84,7 @@ cd ~/cc-monitor
 | 钉钉 | 直连 | 强通知（手表/手环震动） |
 | 微信 | 龙虾 | IM 通知 + 远程输入 |
 | 飞书 | 龙虾 | IM 通知 + 远程输入 |
-| 飞书 | Hermes | IM 通知 + 远程输入（REST API 直连） |
+| 飞书 | Hermes | IM 通知（交互式卡片 + 颜色主题）+ 远程输入 |
 
 > 钉钉始终走 webhook 直连——它是专用强通知通道，发短消息到手表，手腕一震就知道任务完成。微信/飞书是日常聊天工具，拿来震手腕会太吵。
 
