@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cc-monitor v1.2.4 — Claude Code remote monitoring tool
+# cc-monitor v1.2.5 — Claude Code remote monitoring tool
 # Usage: cc-monitor.sh {hook|watchdog [--dry-run]|version|health}
 
 set -u
@@ -50,7 +50,7 @@ run_health_check() {
 
 case "${1:-help}" in
   version|--version|-V)
-    echo "cc-monitor v1.2.4"
+    echo "cc-monitor v1.2.5"
     ;;
   health)
     run_health_check
