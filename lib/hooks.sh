@@ -279,19 +279,25 @@ handle_ask_user_question() {
       notify_user "$msg" "$short"
       echo "[$(date)] Q$((i+1)): notify_user done" >> "$_dbg"
 
-      # 3. Immediately select "Type something" — cursor enters text input
-      #    This protects against bot forwarding to tmux: text goes into input, not ignored
-      local pane_snapshot type_key
-      sleep 2  # Wait for UI to fully render
-      pane_snapshot=$(tmux capture-pane -t "$pane" -p -S -20 2>/dev/null)
-      if echo "$pane_snapshot" | grep -q "Type something"; then
-        type_key=$(echo "$pane_snapshot" | grep -oP '\d+(?=\. Type something)' | tail -1)
-        [[ -z "$type_key" ]] && type_key=4
-        tmux send-keys -t "$pane" "$type_key" 2>/dev/null || true
+      # 3. Wait for "Type something" to appear and select it
+      #    Retry for up to 10s — UI may take time to render after previous question
+      local pane_snapshot type_key found=false
+      for ((retry=0; retry<10; retry++)); do
         sleep 1
-        echo "[$(date)] Q$((i+1)): selected Type something (key=$type_key)" >> "$_dbg"
-      else
-        echo "[$(date)] Q$((i+1)): UI already gone before Type something" >> "$_dbg"
+        pane_snapshot=$(tmux capture-pane -t "$pane" -p -S -50 2>/dev/null)
+        if echo "$pane_snapshot" | grep -q "Type something"; then
+          type_key=$(echo "$pane_snapshot" | grep -oP '\d+(?=\. Type something)' | tail -1)
+          [[ -z "$type_key" ]] && type_key=4
+          tmux send-keys -t "$pane" "$type_key" 2>/dev/null || true
+          sleep 1
+          echo "[$(date)] Q$((i+1)): selected Type something (key=$type_key, retry=$retry)" >> "$_dbg"
+          found=true
+          break
+        fi
+      done
+      if ! $found; then
+        echo "[$(date)] Q$((i+1)): Type something not found after 10s, pane:" >> "$_dbg"
+        tmux capture-pane -t "$pane" -p -S -50 2>/dev/null | tail -15 >> "$_dbg"
         marker_update "$session" "del(.pending_response)"
         continue
       fi
