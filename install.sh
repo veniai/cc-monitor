@@ -621,36 +621,63 @@ register_cron() {
 
 register_codex_hook() {
   local codex_command="bash $HOOK_SCRIPT codex"
-  local settings="$SETTINGS_FILE"
+  local codex_home="${CODEX_HOME:-$HOME/.codex}"
+  local codex_hooks="$codex_home/hooks.json"
+  local codex_config="$codex_home/config.toml"
 
-  if [[ ! -f "$settings" ]]; then
-    mkdir -p "$(dirname "$settings")"
-    echo '{}' > "$settings"
+  # Ensure hooks.json exists
+  if [[ ! -f "$codex_hooks" ]]; then
+    mkdir -p "$codex_home"
+    printf '{"hooks":{"Stop":[{"matcher":"","hooks":[{"type":"command","command":"%s"}]}]}}' "$codex_command" > "$codex_hooks"
+    info "Created $codex_hooks"
+  else
+    # Check if hook already registered
+    local existing
+    existing="$(jq -r --arg cmd "$codex_command" '
+      .hooks["Stop"] // [] | map(select(.hooks[]?.command == $cmd)) | length
+    ' "$codex_hooks" 2>/dev/null || echo "0")"
+
+    if [[ "$existing" != "0" ]]; then
+      info "Codex Stop hook already registered — updating trusted_hash"
+    else
+      # Append hook entry
+      local tmp
+      tmp="$(mktemp)"
+      jq --arg cmd "$codex_command" '
+        .hooks["Stop"] = (.hooks["Stop"] // []) + [{"matcher":"","hooks":[{"type":"command","command":$cmd}]}]
+      ' "$codex_hooks" > "$tmp" && mv "$tmp" "$codex_hooks" || { rm -f "$tmp"; }
+      info "Registered Codex Stop hook in $codex_hooks"
+    fi
   fi
 
-  local existing
-  existing="$(jq -r --arg cmd "$codex_command" '
-    .hooks["Stop"] // [] | map(select(.hooks[]?.command == $cmd)) | length
-  ' "$settings" 2>/dev/null || echo "0")"
+  # Update trusted_hash in config.toml so Codex actually runs the hook
+  update_codex_trusted_hash "$codex_hooks" "$codex_config"
+}
 
-  if [[ "$existing" != "0" ]]; then
-    info "Codex Stop hook already registered — skipping"
-    return 0
+# Update the trusted_hash in Codex config.toml to match current hooks.json
+update_codex_trusted_hash() {
+  local hooks_file="$1"
+  local config_file="$2"
+
+  [[ ! -f "$config_file" ]] && { warn "$config_file not found — skipping trusted_hash update"; return 0; }
+  [[ ! -f "$hooks_file" ]] && return 0
+
+  local new_hash
+  new_hash="$(sha256sum "$hooks_file" | awk '{print $1}')"
+
+  local state_key="$hooks_file:stop:0:0"
+
+  if grep -q "trusted_hash" "$config_file"; then
+    # Replace existing trusted_hash value
+    local tmp
+    tmp="$(mktemp)"
+    sed "s/trusted_hash = \"sha256:[^\"]*\"/trusted_hash = \"sha256:$new_hash\"/" "$config_file" > "$tmp" && mv "$tmp" "$config_file"
+    info "Updated trusted_hash in $config_file"
+  else
+    # Append hooks.state section
+    printf '\n[hooks.state]\n\n[hooks.state."%s"]\nenabled = true\ntrusted_hash = "sha256:%s"\n' "$state_key" "$new_hash" >> "$config_file"
+    info "Added trusted_hash to $config_file"
   fi
-
-  local entry
-  entry="$(jq -n --arg cmd "$codex_command" '{
-    matcher: "",
-    hooks: [{ type: "command", command: $cmd }]
-  }')"
-
-  local tmp
-  tmp="$(mktemp)"
-  jq --argjson entry "$entry" '
-    .hooks["Stop"] = (.hooks["Stop"] // []) + [$entry]
-  ' "$settings" > "$tmp" && mv "$tmp" "$settings" || { rm -f "$tmp"; }
-
-  info "Registered Codex Stop hook in $settings"
 }
 
 # ---------------------------------------------------------------------------
@@ -690,6 +717,19 @@ do_uninstall() {
     local hook_events=("Stop" "StopFailure" "PermissionRequest" "SessionEnd")
     remove_hooks_for_command "bash $HOOK_SCRIPT hook" "${hook_events[@]}"
     remove_hooks_for_command "bash $HOOK_SCRIPT codex" "Stop"
+
+    # Also remove from Codex CLI hooks.json if it exists
+    local codex_hooks="${CODEX_HOME:-$HOME/.codex}/hooks.json"
+    if [[ -f "$codex_hooks" ]]; then
+      local tmp
+      tmp="$(mktemp)"
+      jq --arg cmd "bash $HOOK_SCRIPT codex" '
+        .hooks["Stop"] |= ((. // []) | map(
+          .hooks |= map(select(.command != $cmd))
+        ) | map(select((.hooks | length) > 0)))
+      ' "$codex_hooks" > "$tmp" && mv "$tmp" "$codex_hooks" || { rm -f "$tmp"; }
+      info "Removed Codex Stop hook from $codex_hooks"
+    fi
 
     local tmp
     tmp="$(mktemp)"
