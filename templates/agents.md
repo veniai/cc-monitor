@@ -21,18 +21,23 @@
 
 - 解析目标 session，支持模糊匹配
 - 用 `tmux list-sessions` 确认它存在
-- 写 marker，转发消息
-- 不改变当前 active session
-- 回复 `NO_REPLY`
-
-### 2. 回复 `[Monitor]` 通知
-
-- Hermes 模式下通知回复不可靠，用户应使用 `发送给 X ...` 替代
-- **收到带 `[Replying to: "...**[Monitor]** <session>..."]` 前缀的消息时**：
-  - 提示用户：`请用「发送给 <session> 消息内容」格式回复`
+- **先检查该 session 的 marker 有没有 `pending_response`**：
+  ```bash
+  jq -r '.pending_response // empty' /tmp/cc-monitor/<session>.json
+  ```
+- **如果有 pending_response**（cc-monitor 在等 AskUserQuestion 回答）：
+  - 把用户回复的原始文字写入 marker（用 mktemp 避免并发写冲突）：
+    ```bash
+    tmp="$(mktemp /tmp/cc-monitor/<session>.json.XXXXXX)" && jq --arg r "用户的原始回复" '.pending_response.response = $r' /tmp/cc-monitor/<session>.json > "$tmp" && mv "$tmp" /tmp/cc-monitor/<session>.json
+    ```
+  - cc-monitor 后台进程会自动粘贴到 AskUserQuestion 的文本输入框
+  - 回复 `NO_REPLY`
+- **没有 pending_response**（普通消息）：
+  - 写 marker，转发消息
+  - 不改变当前 active session
   - 回复 `NO_REPLY`
 
-### 3. `切到 X`
+### 2. `切到 X`
 
 - 把 active session 设置为 X
 - 立即扫描 X 的最后 5 行非空输出
@@ -47,9 +52,10 @@
 ### 4. `发送 XXX`
 
 - 必须先有 active session
-- 先写 `{markerDir}/<session>.json`，再通过 `paste-buffer` 转发（参见 TOOLS.md）
+- **先检查 active session 的 marker 有没有 `pending_response`**（同规则 #1 的检查方式）
+- **如果有 pending_response**：写入 marker（同规则 #1），回复 `NO_REPLY`
+- **没有 pending_response**：写 marker，通过 `paste-buffer` 转发（参见 TOOLS.md），回复 `NO_REPLY`
 - 不加前缀，不改写，不翻译
-- 回复 `NO_REPLY`
 
 ### 5. `看下 X`
 
