@@ -5,6 +5,8 @@
 set -u
 set -o pipefail
 
+HOME="${HOME:-$(echo ~)}"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Source lib modules

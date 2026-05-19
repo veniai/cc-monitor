@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # config.sh — INI config loader with env var override for cc-monitor
+HOME="${HOME:-$(echo ~)}"
 [[ -n "${_CONFIG_LOADED:-}" ]] && return 0
 _CONFIG_LOADED=1
 
