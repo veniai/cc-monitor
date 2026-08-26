@@ -1,0 +1,46 @@
+name: Bootstrap PLDR repository
+
+on:
+  push:
+    paths:
+      - ".github/workflows/pldr-bootstrap.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  create-repository:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ secrets.PLDR_BOOTSTRAP_TOKEN || secrets.GH_PAT || secrets.PERSONAL_ACCESS_TOKEN || secrets.PAT || secrets.REPO_TOKEN || secrets.GH_TOKEN || github.token }}
+    steps:
+      - name: Attempt PLDR repository creation
+        shell: bash
+        run: |
+          set +e
+          result_file="pldr-bootstrap-result.txt"
+          echo "attempted_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$result_file"
+          gh api --method POST user/repos \
+            -f name='PLDR' \
+            -f description='Evidence-centered open-source intelligence workbench' \
+            -F private=true \
+            -F auto_init=true \
+            > /tmp/pldr-create.json 2> /tmp/pldr-create.err
+          rc=$?
+          echo "create_exit_code=$rc" >> "$result_file"
+          if [ "$rc" -eq 0 ]; then
+            echo "status=created" >> "$result_file"
+            grep -o '"html_url":"[^"]*"' /tmp/pldr-create.json | head -1 >> "$result_file"
+          else
+            echo "status=failed" >> "$result_file"
+            head -30 /tmp/pldr-create.err >> "$result_file"
+          fi
+          exit 0
+
+      - name: Upload bootstrap result
+        uses: actions/upload-artifact@v4
+        with:
+          name: pldr-bootstrap-result
+          path: pldr-bootstrap-result.txt
+          retention-days: 1
