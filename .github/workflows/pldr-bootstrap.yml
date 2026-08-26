@@ -2,8 +2,7 @@ name: Bootstrap PLDR repository
 
 on:
   push:
-    paths:
-      - ".github/workflows/pldr-bootstrap.yml"
+    branches: ["master"]
 
 permissions:
   contents: read
